@@ -17,6 +17,8 @@ public struct LexicalCandidateGenerator: CandidateGenerator {
         let text = query.freeText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }
         let matchExpression = Self.ftsMatchExpression(for: text)
+        let filter = QueryFilters.clause(for: query)
+        let arguments: [any DatabaseValueConvertible & Sendable] = [matchExpression] + filter.arguments + [limit]
 
         return try await database.pool.read { db in
             let rows = try Row.fetchAll(
@@ -25,11 +27,11 @@ public struct LexicalCandidateGenerator: CandidateGenerator {
                 SELECT fts_docs.document_id AS document_id
                 FROM fts_docs
                 JOIN documents ON documents.id = fts_docs.document_id
-                WHERE fts_docs MATCH ? AND documents.trashed_at IS NULL
+                WHERE fts_docs MATCH ? AND \(filter.sql)
                 ORDER BY bm25(fts_docs, 3.0, 1.0, 2.0, 2.0)
                 LIMIT ?
                 """,
-                arguments: [matchExpression, limit]
+                arguments: StatementArguments(arguments)
             )
             return rows.enumerated().map { index, row in
                 RankedDocument(documentID: row["document_id"], rank: index + 1)

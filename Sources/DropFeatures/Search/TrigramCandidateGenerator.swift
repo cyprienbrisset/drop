@@ -19,6 +19,8 @@ public struct TrigramCandidateGenerator: CandidateGenerator {
         let text = query.freeText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }
         let matchExpression = LexicalCandidateGenerator.ftsMatchExpression(for: text)
+        let filter = QueryFilters.clause(for: query)
+        let arguments: [any DatabaseValueConvertible & Sendable] = [matchExpression] + filter.arguments + [limit]
 
         return try await database.pool.read { db in
             let rows = try Row.fetchAll(
@@ -27,10 +29,10 @@ public struct TrigramCandidateGenerator: CandidateGenerator {
                 SELECT DISTINCT fts_trigram.document_id AS document_id
                 FROM fts_trigram
                 JOIN documents ON documents.id = fts_trigram.document_id
-                WHERE fts_trigram MATCH ? AND documents.trashed_at IS NULL
+                WHERE fts_trigram MATCH ? AND \(filter.sql)
                 LIMIT ?
                 """,
-                arguments: [matchExpression, limit]
+                arguments: StatementArguments(arguments)
             )
             return rows.enumerated().map { index, row in
                 RankedDocument(documentID: row["document_id"], rank: index + 1)
