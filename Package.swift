@@ -73,6 +73,7 @@ let package = Package(
         .testTarget(name: "DropEmbeddingsTests", dependencies: ["DropEmbeddings"]),
         .testTarget(name: "DropSearchTests", dependencies: ["DropSearch"]),
         .testTarget(name: "DropLicenseTests", dependencies: ["DropLicense"]),
+        .testTarget(name: "DropJobsTests", dependencies: ["DropJobs"]),
         .testTarget(
             name: "DropFeaturesTests",
             dependencies: ["DropFeatures", .product(name: "GRDB", package: "GRDB.swift")]
