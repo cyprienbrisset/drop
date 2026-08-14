@@ -16,19 +16,33 @@ public struct IngestFiles: Sendable {
     private let vault: VaultService
     private let database: DropIndexDatabase
     private let clock: DropClock
+    private let sleeper: Sleeper
+    private let stabilityWindowSeconds: Double
 
-    public init(vault: VaultService, database: DropIndexDatabase, clock: DropClock = SystemClock()) {
+    public init(
+        vault: VaultService, database: DropIndexDatabase, clock: DropClock = SystemClock(),
+        sleeper: Sleeper = SystemSleeper(), stabilityWindowSeconds: Double = 2
+    ) {
         self.vault = vault
         self.database = database
         self.clock = clock
+        self.sleeper = sleeper
+        self.stabilityWindowSeconds = stabilityWindowSeconds
     }
 
     /// Ingère un fichier et retourne l'identifiant du document créé.
+    ///
+    /// Note de portée : la coordination `NSFileCoordinator` (§5.1 étape 1) n'est pas encore
+    /// câblée ici — elle dépend du contexte d'invocation (glisser-déposer, dossier surveillé...)
+    /// et sera ajoutée avec ces intégrations. La vérification de stabilité EF-11 (étape 2), elle,
+    /// est appliquée ici : deux relevés taille+date espacés de \(stabilityWindowSeconds) s.
     @discardableResult
-    public func ingest(fileAt sourceURL: URL, source: String = "drop") throws -> String {
-        // Étapes 1-2 (coordination, stabilité EF-11) sont à la charge de l'appelant : elles
-        // dépendent du contexte d'invocation (glisser-déposer, dossier surveillé...) et ne sont
-        // pas encore implémentées ici (suivi séparé).
+    public func ingest(fileAt sourceURL: URL, source: String = "drop") async throws -> String {
+        let before = try vault.stabilitySnapshot(fileAt: sourceURL)
+        try await sleeper.sleep(seconds: stabilityWindowSeconds)
+        let after = try vault.stabilitySnapshot(fileAt: sourceURL)
+        guard before == after else { throw IngestionError.lockedOrUnstable }
+
         let blob = try vault.writeBlob(fromFileAt: sourceURL, originalPath: sourceURL.path)
 
         let documentID = UUID().uuidString
@@ -36,7 +50,7 @@ public struct IngestFiles: Sendable {
         let displayName = sourceURL.lastPathComponent
 
         do {
-            try database.pool.write { db in
+            try await database.pool.write { db in
                 try db.execute(
                     sql: "INSERT OR IGNORE INTO blobs (hash, size_bytes, stored_at) VALUES (?, ?, ?)",
                     arguments: [blob.hash, blob.sizeBytes, now]

@@ -6,7 +6,7 @@ import Foundation
 import GRDB
 import Testing
 
-@Test func ingestingAFileCreatesBlobAndDocumentInOneTransaction() throws {
+@Test func ingestingAFileCreatesBlobAndDocumentInOneTransaction() async throws {
     let fileSystem = InMemoryFileSystem()
     let root = URL(fileURLWithPath: "/vault-root")
     let source = URL(fileURLWithPath: "/incoming/facture-edf.pdf")
@@ -18,10 +18,10 @@ import Testing
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
     let database = try DropIndexDatabase(path: dbPath)
 
-    let ingest = IngestFiles(vault: vault, database: database)
-    let documentID = try ingest.ingest(fileAt: source)
+    let ingest = IngestFiles(vault: vault, database: database, sleeper: ImmediateSleeper())
+    let documentID = try await ingest.ingest(fileAt: source)
 
-    let (blobCount, refCount, documentCount): (Int, Int, Int) = try database.pool.read { db in
+    let (blobCount, refCount, documentCount): (Int, Int, Int) = try await database.pool.read { db in
         let blobCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM blobs") ?? 0
         let refCount = try Int.fetchOne(db, sql: "SELECT ref_count FROM blobs LIMIT 1") ?? 0
         let documentCount = try Int.fetchOne(
@@ -35,7 +35,7 @@ import Testing
     #expect(documentCount == 1) // I2 : le document existe, et son blob existe déjà sur disque.
 }
 
-@Test func ingestingTwoFilesWithIdenticalContentSharesOneBlob() throws {
+@Test func ingestingTwoFilesWithIdenticalContentSharesOneBlob() async throws {
     let fileSystem = InMemoryFileSystem()
     let root = URL(fileURLWithPath: "/vault-root")
     let sourceA = URL(fileURLWithPath: "/incoming/facture.pdf")
@@ -49,11 +49,11 @@ import Testing
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
     let database = try DropIndexDatabase(path: dbPath)
 
-    let ingest = IngestFiles(vault: vault, database: database)
-    _ = try ingest.ingest(fileAt: sourceA)
-    _ = try ingest.ingest(fileAt: sourceB)
+    let ingest = IngestFiles(vault: vault, database: database, sleeper: ImmediateSleeper())
+    _ = try await ingest.ingest(fileAt: sourceA)
+    _ = try await ingest.ingest(fileAt: sourceB)
 
-    let (blobCount, refCount, documentCount): (Int, Int, Int) = try database.pool.read { db in
+    let (blobCount, refCount, documentCount): (Int, Int, Int) = try await database.pool.read { db in
         let blobCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM blobs") ?? 0
         let refCount = try Int.fetchOne(db, sql: "SELECT ref_count FROM blobs LIMIT 1") ?? 0
         let documentCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM documents") ?? 0
@@ -65,7 +65,7 @@ import Testing
     #expect(documentCount == 2)
 }
 
-@Test func ingestingAFileTooLargeThrowsAndTouchesNeitherBlobNorDatabase() throws {
+@Test func ingestingAFileTooLargeThrowsAndTouchesNeitherBlobNorDatabase() async throws {
     let fileSystem = InMemoryFileSystem()
     let root = URL(fileURLWithPath: "/vault-root")
     let source = URL(fileURLWithPath: "/incoming/huge.bin")
@@ -77,13 +77,13 @@ import Testing
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
     let database = try DropIndexDatabase(path: dbPath)
 
-    let ingest = IngestFiles(vault: vault, database: database)
+    let ingest = IngestFiles(vault: vault, database: database, sleeper: ImmediateSleeper())
 
-    #expect(throws: IngestionError.tooLarge) {
-        try ingest.ingest(fileAt: source)
+    await #expect(throws: IngestionError.tooLarge) {
+        try await ingest.ingest(fileAt: source)
     }
 
-    let documentCount = try database.pool.read { db in
+    let documentCount = try await database.pool.read { db in
         try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM documents") ?? 0
     }
     #expect(documentCount == 0)

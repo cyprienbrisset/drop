@@ -11,6 +11,13 @@ public struct BlobWriteResult: Sendable, Equatable {
     public let isNewBlob: Bool
 }
 
+/// Instantané taille+date, pour la détection de stabilité EF-11 : un fichier n'est ingéré que si
+/// deux relevés espacés de 2 s sont identiques (téléchargements en cours, `.crdownload`, `.part`).
+public struct FileStabilitySnapshot: Sendable, Equatable {
+    public let sizeBytes: Int64
+    public let modificationDate: Date
+}
+
 /// Point d'entrée du module coffre : blobs, ingestion atomique, corbeille, GC, intégrité, export (§4.2).
 /// `DropVault` ne connaît pas `DropIndex` — la cohérence blob ↔ base est orchestrée par
 /// `DropFeatures.IngestFiles`, seul endroit du code où les deux sont manipulés ensemble (§4.2 règle 1).
@@ -37,6 +44,15 @@ public struct VaultService: Sendable {
         let prefix2 = String(hash.dropFirst(2).prefix(2))
         let directory = vaultRoot.appendingPathComponent("vault/\(prefix1)/\(prefix2)")
         return (directory.appendingPathComponent("\(hash).blob"), directory.appendingPathComponent("\(hash).json"))
+    }
+
+    /// Relevé pour la vérification de stabilité EF-11 (§5.1 étape 2). L'appelant compare deux
+    /// relevés espacés de 2 s avant d'ingérer.
+    public func stabilitySnapshot(fileAt url: URL) throws -> FileStabilitySnapshot {
+        guard fileSystem.fileExists(at: url) else { throw IngestionError.unreadable }
+        return FileStabilitySnapshot(
+            sizeBytes: try fileSystem.fileSize(at: url), modificationDate: try fileSystem.modificationDate(at: url)
+        )
     }
 
     /// Séquence §5.1, étapes 3 à 7. Invariants garantis :
