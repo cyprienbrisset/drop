@@ -19,7 +19,7 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
     func modificationDate(at url: URL) throws -> Date { .distantPast }
 
     func createDirectory(at url: URL) throws {
-        lock.withLock { directories.insert(url.path) }
+        lock.withLock { _ = directories.insert(url.path) }
     }
 
     func moveItem(at source: URL, to destination: URL) throws {
@@ -45,6 +45,25 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
 
     func syncFile(at url: URL) throws {}
     func syncDirectory(at url: URL) throws {}
+
+    func copyItem(at source: URL, to destination: URL) throws {
+        guard let data = lock.withLock({ files[source.path] }) else {
+            throw DropError(code: "TEST-404", message: "not found")
+        }
+        lock.withLock { files[destination.path] = data }
+    }
+
+    func forEachChunk(at url: URL, chunkSize: Int, _ body: (Data) throws -> Void) throws {
+        guard let data = lock.withLock({ files[url.path] }) else {
+            throw DropError(code: "TEST-404", message: "not found")
+        }
+        var offset = 0
+        while offset < data.count {
+            let end = min(offset + chunkSize, data.count)
+            try body(data.subdata(in: offset..<end))
+            offset = end
+        }
+    }
 
     func contentsOfDirectory(at url: URL) throws -> [URL] {
         lock.withLock {

@@ -53,6 +53,7 @@ let package = Package(
             dependencies: [
                 "DropCore", "DropVault", "DropIndex", "DropExtraction", "DropEntities",
                 "DropIntelligence", "DropEmbeddings", "DropSearch", "DropJobs", "DropLicense",
+                .product(name: "GRDB", package: "GRDB.swift"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -71,5 +72,9 @@ let package = Package(
         .testTarget(name: "DropEmbeddingsTests", dependencies: ["DropEmbeddings"]),
         .testTarget(name: "DropSearchTests", dependencies: ["DropSearch"]),
         .testTarget(name: "DropLicenseTests", dependencies: ["DropLicense"]),
+        .testTarget(
+            name: "DropFeaturesTests",
+            dependencies: ["DropFeatures", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
     ]
 )

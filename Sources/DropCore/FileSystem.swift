@@ -14,6 +14,9 @@ public protocol FileSystem: Sendable {
     func syncFile(at url: URL) throws
     func syncDirectory(at url: URL) throws
     func contentsOfDirectory(at url: URL) throws -> [URL]
+    func copyItem(at source: URL, to destination: URL) throws
+    /// Lecture par blocs, sans jamais charger le fichier entier en mémoire (§5.1 étape 3).
+    func forEachChunk(at url: URL, chunkSize: Int, _ body: (Data) throws -> Void) throws
 }
 
 /// Implémentation réelle, adossée à `FileManager`. Utilisée en production uniquement.
@@ -68,5 +71,18 @@ public struct LiveFileSystem: FileSystem {
 
     public func contentsOfDirectory(at url: URL) throws -> [URL] {
         try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+    }
+
+    public func copyItem(at source: URL, to destination: URL) throws {
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
+
+    public func forEachChunk(at url: URL, chunkSize: Int, _ body: (Data) throws -> Void) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        while true {
+            guard let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty else { break }
+            try body(chunk)
+        }
     }
 }
