@@ -99,5 +99,6 @@ let package = Package(
             name: "DropFeaturesTests",
             dependencies: ["DropFeatures", .product(name: "GRDB", package: "GRDB.swift")]
         ),
+        .testTarget(name: "DropAppTests", dependencies: ["DropApp"]),
     ]
 )

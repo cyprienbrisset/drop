@@ -2,21 +2,19 @@ import DropFeatures
 import SwiftUI
 
 /// Écran Préférences (EX-02) : emplacement du coffre (EF-20) et budget disque, affiché en
-/// permanence (EF-26). La réparation (EF-28) est traitée séparément (DRO-49, Phase 7).
-///
-/// Note de portée : cette vue affiche les données qu'on lui passe ; elle ne lit pas encore l'état
-/// réel de l'application (pas de bootstrap `DropApp` vers un `VaultService`/`DropIndexDatabase`
-/// vivants à ce stade du projet). Le changement d'emplacement avec migration vérifiée (EF-20)
-/// n'est pas encore câblé : afficher l'emplacement actuel sans permettre de le changer plutôt que
-/// proposer une action qui ne ferait rien.
+/// permanence (EF-26), calculé pour de vrai sur le coffre actif. La réparation (EF-28) est
+/// traitée séparément (DRO-49, Phase 7). Le changement d'emplacement avec migration vérifiée
+/// (EF-20) n'est pas encore câblé : afficher l'emplacement actuel sans permettre de le changer
+/// plutôt que proposer une action qui ne ferait rien.
 struct PreferencesView: View {
-    let vaultLocation: URL
-    let budget: VaultBudget
+    let environment: AppEnvironment
+
+    @State private var budget = VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
 
     var body: some View {
         Form {
             Section("Emplacement du coffre") {
-                LabeledContent("Dossier actuel", value: vaultLocation.path)
+                LabeledContent("Dossier actuel", value: environment.vaultRoot.path)
             }
 
             Section("Budget disque") {
@@ -28,6 +26,7 @@ struct PreferencesView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 420, minHeight: 260)
+        .task { budget = await environment.computeBudget() }
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {
@@ -36,8 +35,5 @@ struct PreferencesView: View {
 }
 
 #Preview {
-    PreferencesView(
-        vaultLocation: URL(fileURLWithPath: "/Users/exemple/Library/Application Support/Drop"),
-        budget: VaultBudget(vaultSizeBytes: 128_000_000, dedupSavingsBytes: 12_000_000, indexSizeBytes: 4_500_000, vectorsSizeBytes: 0)
-    )
+    PreferencesView(environment: try! AppEnvironment(vaultRoot: FileManager.default.temporaryDirectory.appendingPathComponent("drop-preview")))
 }

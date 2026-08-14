@@ -1,36 +1,43 @@
 import QuickLook
 import SwiftUI
 
-/// Barre de recherche globale + résultats (EX-02, EF-60, EF-67). Navigation clavier intégrale
-/// (EX-04) : ↑↓ sélection (gérée nativement par `List`), ↵ ouvrir, ⌘↵ révéler dans le Finder,
-/// Espace Quick Look, ⌘⌫ retirer.
-///
-/// Note de portée : reçoit ses résultats en paramètre plutôt que d'interroger un moteur de
-/// recherche vivant — le bootstrap applicatif reliant cette vue à `DropFeatures.LexicalSearch`
-/// n'existe pas encore (même limite que `PreferencesView`). L'affichage progressif (lexical
-/// d'abord, sémantique fusionné ensuite, sans déplacer l'élément sous le focus) est la
-/// responsabilité de l'appelant qui met à jour `results` au fil de l'eau : cette vue se contente
-/// de ne jamais réordonner silencieusement sous la sélection courante.
+/// Barre de recherche globale + résultats (EX-02, EF-60, EF-67), type Spotlight. Navigation
+/// clavier intégrale (EX-04) : ↑↓ sélection (gérée nativement par `List`), ↵ ouvrir, ⌘↵ révéler
+/// dans le Finder, Espace Quick Look, ⌘⌫ retirer. Recherche en direct : chaque frappe relance
+/// `environment.search` après un court débounce (150 ms), sans jamais réordonner sous le focus
+/// clavier — `List` conserve la sélection par identifiant, pas par position.
 struct SearchView: View {
+    let environment: AppEnvironment
+
     @State private var queryText: String = ""
     @State private var selection: String?
     @State private var quickLookURL: URL?
 
-    let results: [DocumentSearchResult]
-    var onOpen: (DocumentSearchResult) -> Void = { _ in }
-    var onReveal: (DocumentSearchResult) -> Void = { _ in }
-    var onRemove: (DocumentSearchResult) -> Void = { _ in }
-
     var body: some View {
         VStack(spacing: 0) {
-            TextField("Rechercher un document…", text: $queryText)
-                .textFieldStyle(.plain)
-                .font(.title3)
-                .padding(12)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Rechercher un document…", text: $queryText)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                if environment.isSearching {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .padding(12)
 
             Divider()
 
-            if results.isEmpty {
+            if queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ContentUnavailableView(
+                    "Tapez pour rechercher",
+                    systemImage: "magnifyingglass",
+                    description: Text("« la facture EDF de juillet », « contrats en 2024 »…")
+                )
+                .frame(maxHeight: .infinity)
+            } else if environment.searchResults.isEmpty && !environment.isSearching {
                 ContentUnavailableView(
                     "Aucun résultat pertinent",
                     systemImage: "magnifyingglass",
@@ -38,7 +45,7 @@ struct SearchView: View {
                 )
                 .frame(maxHeight: .infinity)
             } else {
-                List(results, selection: $selection) { result in
+                List(environment.searchResults, selection: $selection) { result in
                     DocumentResultRow(result: result)
                         .tag(result.id)
                 }
@@ -46,13 +53,18 @@ struct SearchView: View {
             }
         }
         .frame(minWidth: 480, minHeight: 360)
+        .task(id: queryText) {
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            await environment.search(queryText)
+        }
         .onKeyPress(.return) {
-            performOnSelection(onOpen)
+            performOnSelection(environment.open)
             return .handled
         }
         .onKeyPress(.return, phases: .down) { press in
             guard press.modifiers.contains(.command) else { return .ignored }
-            performOnSelection(onReveal)
+            performOnSelection(environment.reveal)
             return .handled
         }
         .onKeyPress(.space) {
@@ -61,14 +73,14 @@ struct SearchView: View {
         }
         .onKeyPress(.deleteForward, phases: .down) { press in
             guard press.modifiers.contains(.command) else { return .ignored }
-            performOnSelection(onRemove)
+            performOnSelection(environment.remove)
             return .handled
         }
         .quickLookPreview($quickLookURL)
     }
 
     private var selectedResult: DocumentSearchResult? {
-        results.first { $0.id == selection }
+        environment.searchResults.first { $0.id == selection }
     }
 
     private func performOnSelection(_ action: (DocumentSearchResult) -> Void) {
@@ -112,12 +124,5 @@ private struct DocumentResultRow: View {
 }
 
 #Preview {
-    SearchView(results: [
-        DocumentSearchResult(
-            id: "1", displayName: "Facture EDF juillet.pdf", docType: "facture", issuer: "EDF",
-            effectiveDate: .now, amount: 84.20, keywords: ["électricité"], summary: "Facture d'électricité de juillet.",
-            tags: [], originalPath: "/Users/exemple/Downloads/facture.pdf", sizeBytes: 245_000,
-            hash: "abcdef0123456789", previewURL: nil
-        )
-    ])
+    SearchView(environment: try! AppEnvironment(vaultRoot: FileManager.default.temporaryDirectory.appendingPathComponent("drop-preview")))
 }
