@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "DropLicense", targets: ["DropLicense"]),
         .library(name: "DropFeatures", targets: ["DropFeatures"]),
         .executable(name: "DropApp", targets: ["DropApp"]),
+        .executable(name: "ValidationHarness", targets: ["ValidationHarness"]),
     ],
     dependencies: [
         // Dépendance tierce autorisée (§4.1). SQLCipher sera substitué au SQLite système en
@@ -58,6 +59,10 @@ let package = Package(
 
         // Application : menu bar, Drop Zone, Search, Préférences.
         .executableTarget(name: "DropApp", dependencies: ["DropFeatures"], swiftSettings: [.swiftLanguageMode(.v6)]),
+
+        // Protocole de mesure pour les validations bloquantes de Phase 0 (DRO-16, DRO-17).
+        // Exécutable séparé : ne fait pas partie du produit, jamais embarqué dans DropApp.
+        .executableTarget(name: "ValidationHarness", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
 
         // Tests — cibles prioritaires de couverture (§8.1) : DropCore, DropSearch, DropLicense.
         .testTarget(name: "DropCoreTests", dependencies: ["DropCore"]),
