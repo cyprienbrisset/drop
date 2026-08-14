@@ -14,6 +14,7 @@ struct SearchView: View {
     @State private var selection: String?
     @State private var quickLookURL: URL?
     @State private var detailResult: DocumentSearchResult?
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,7 @@ struct SearchView: View {
                 TextField("Rechercher un document…", text: $queryText)
                     .textFieldStyle(.plain)
                     .font(.title3)
+                    .focused($isSearchFieldFocused)
                 if environment.isSearching {
                     ProgressView()
                         .controlSize(.small)
@@ -62,21 +64,27 @@ struct SearchView: View {
             guard !Task.isCancelled else { return }
             await environment.search(queryText)
         }
+        .onAppear { isSearchFieldFocused = true }
+        // Tous ces raccourcis n'agissent que si le champ de recherche n'a pas le focus — sinon
+        // Espace (le plus visible : impossible de taper une requête à plusieurs mots), Retour et
+        // ⌘⌫ seraient volés à la saisie de texte normale dès qu'une ligne se trouve sélectionnée.
         .onKeyPress(.return) {
+            guard !isSearchFieldFocused else { return .ignored }
             performOnSelection(environment.open)
             return .handled
         }
         .onKeyPress(.return, phases: .down) { press in
-            guard press.modifiers.contains(.command) else { return .ignored }
+            guard !isSearchFieldFocused, press.modifiers.contains(.command) else { return .ignored }
             performOnSelection(environment.reveal)
             return .handled
         }
         .onKeyPress(.space) {
+            guard !isSearchFieldFocused else { return .ignored }
             quickLookURL = selectedResult?.previewURL
             return .handled
         }
         .onKeyPress(.deleteForward, phases: .down) { press in
-            guard press.modifiers.contains(.command) else { return .ignored }
+            guard !isSearchFieldFocused, press.modifiers.contains(.command) else { return .ignored }
             performOnSelection(environment.remove)
             return .handled
         }

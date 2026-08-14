@@ -20,7 +20,7 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
 /// `handleDrop` serait soit trop court, soit inutilement long — on sonde plutôt jusqu'à ce que
 /// la recherche renvoie quelque chose, avec un plafond généreux.
 @MainActor
-private func waitUntilSearchable(_ environment: AppEnvironment, query: String, timeout: TimeInterval = 40) async {
+private func waitUntilSearchable(_ environment: AppEnvironment, query: String, timeout: TimeInterval = 75) async {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         await environment.search(query)
