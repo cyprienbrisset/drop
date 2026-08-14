@@ -141,6 +141,58 @@ public struct VaultService: Sendable {
         try? fileSystem.removeItem(at: metadataURL)
     }
 
+    // MARK: - Export (§5.10)
+
+    /// Taille du fichier à cette destination, ou `nil` s'il n'existe pas encore — utilisé pour
+    /// détecter une reprise d'export déjà écrite (§5.10 : « sans doublon »).
+    public func existingFileSize(at url: URL) -> Int64? {
+        guard fileSystem.fileExists(at: url) else { return nil }
+        return try? fileSystem.fileSize(at: url)
+    }
+
+    /// Copie le blob vers une destination hors coffre, en lecture seule sur l'original (§5.10,
+    /// EF-24/EF-25). Le blob source n'est jamais déplacé ni modifié.
+    public func exportBlob(hash: String, to destinationURL: URL) throws {
+        let (blobURL, _) = paths(forHash: hash)
+        guard fileSystem.fileExists(at: blobURL) else { throw IngestionError.unreadable }
+        try fileSystem.createDirectory(at: destinationURL.deletingLastPathComponent())
+        try fileSystem.copyItem(at: blobURL, to: destinationURL)
+    }
+
+    /// Résout les collisions de noms par suffixe `" (2)"`, `" (3)"`... (§5.10). Crée le dossier de
+    /// destination si besoin.
+    public func uniqueDestinationURL(forName name: String, inDirectory directory: URL) throws -> URL {
+        try fileSystem.createDirectory(at: directory)
+        let firstCandidate = directory.appendingPathComponent(name)
+        guard fileSystem.fileExists(at: firstCandidate) else { return firstCandidate }
+
+        let stem = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+        var suffix = 2
+        while true {
+            let candidateName = ext.isEmpty ? "\(stem) (\(suffix))" : "\(stem) (\(suffix)).\(ext)"
+            let candidate = directory.appendingPathComponent(candidateName)
+            if !fileSystem.fileExists(at: candidate) { return candidate }
+            suffix += 1
+        }
+    }
+
+    /// Écrit `manifest.csv` en UTF-8 avec BOM, ouvrable dans Excel sans manipulation (§5.10).
+    /// Colonnes : nom, type, émetteur, date détectée, montant, hash, chemin d'origine.
+    public func writeExportManifest(_ rows: [[String]], to url: URL) throws {
+        var csv = "\u{FEFF}nom,type,émetteur,date,montant,hash,chemin_origine\r\n"
+        for row in rows {
+            csv += row.map(Self.csvField).joined(separator: ",") + "\r\n"
+        }
+        try fileSystem.createDirectory(at: url.deletingLastPathComponent())
+        try fileSystem.write(Data(csv.utf8), to: url)
+    }
+
+    private static func csvField(_ value: String) -> String {
+        guard value.contains(",") || value.contains("\"") || value.contains("\n") else { return value }
+        return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+    }
+
     /// Vide `tmp/` au démarrage (§5.9) : tout fichier `.part` qui s'y trouve est le résidu d'une
     /// ingestion interrompue avant son `rename` — jamais un original ni un blob validé (I5).
     public func clearTemporaryFiles() throws {
