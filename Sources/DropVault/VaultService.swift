@@ -109,6 +109,48 @@ public struct VaultService: Sendable {
         return BlobWriteResult(hash: hash, sizeBytes: sizeBytes, blobURL: blobURL, metadataURL: metadataURL, isNewBlob: true)
     }
 
+    // MARK: - Corbeille (EF-23, §5.9)
+
+    private func trashRecordURL(forDocumentID documentID: String) -> URL {
+        vaultRoot.appendingPathComponent("trash/\(documentID)/record.json")
+    }
+
+    /// Écrit la fiche de restauration. Le blob reste en place dans `vault/` — voir `TrashRecord`.
+    @discardableResult
+    public func writeTrashRecord(_ record: TrashRecord) throws -> URL {
+        let url = trashRecordURL(forDocumentID: record.documentID)
+        try fileSystem.createDirectory(at: url.deletingLastPathComponent())
+        try fileSystem.write(try JSONEncoder().encode(record), to: url)
+        return url
+    }
+
+    public func readTrashRecord(documentID: String) throws -> TrashRecord {
+        try JSONDecoder().decode(TrashRecord.self, from: fileSystem.read(at: trashRecordURL(forDocumentID: documentID)))
+    }
+
+    /// Supprime la fiche de restauration, une fois le document restauré ou purgé.
+    public func removeTrashRecord(documentID: String) throws {
+        try fileSystem.removeItem(at: trashRecordURL(forDocumentID: documentID))
+    }
+
+    /// Purge physique d'un blob : appelée uniquement quand plus aucun document, actif ou en
+    /// corbeille, ne le référence (I4 : jamais avant, jamais partiellement).
+    public func deleteBlobFiles(hash: String) throws {
+        let (blobURL, metadataURL) = paths(forHash: hash)
+        try? fileSystem.removeItem(at: blobURL)
+        try? fileSystem.removeItem(at: metadataURL)
+    }
+
+    /// Vide `tmp/` au démarrage (§5.9) : tout fichier `.part` qui s'y trouve est le résidu d'une
+    /// ingestion interrompue avant son `rename` — jamais un original ni un blob validé (I5).
+    public func clearTemporaryFiles() throws {
+        let tmpDirectory = vaultRoot.appendingPathComponent("tmp")
+        guard let entries = try? fileSystem.contentsOfDirectory(at: tmpDirectory) else { return }
+        for entry in entries {
+            try? fileSystem.removeItem(at: entry)
+        }
+    }
+
     // Immuable après configuration, jamais mutée — partage sûr entre threads malgré l'absence
     // de conformance `Sendable` de `ISO8601DateFormatter`.
     nonisolated(unsafe) private static let isoFormatter: ISO8601DateFormatter = {
