@@ -11,6 +11,7 @@ struct DropZoneView: View {
     let environment: AppEnvironment
     var onOpenSearch: () -> Void = {}
     var onOpenPreferences: () -> Void = {}
+    var onOpenTrash: () -> Void = {}
     @State private var isTargeted = false
 
     var body: some View {
@@ -18,6 +19,7 @@ struct DropZoneView: View {
             dropZone
             Divider()
             actionRow(systemImage: "magnifyingglass", title: "Rechercher…", action: onOpenSearch)
+            actionRow(systemImage: "trash", title: "Corbeille…", action: onOpenTrash)
             actionRow(systemImage: "gearshape", title: "Préférences…", action: onOpenPreferences)
             actionRow(systemImage: "power", title: "Quitter Drop") {
                 NSApplication.shared.terminate(nil)

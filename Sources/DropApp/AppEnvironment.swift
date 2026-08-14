@@ -44,6 +44,7 @@ final class AppEnvironment {
     var dropZoneState: DropZoneState = .idle
     var searchResults: [DocumentSearchResult] = []
     var isSearching = false
+    var trashedDocuments: [ManageTrash.TrashedDocument] = []
 
     /// Emplacement par défaut (§EF-20) : Application Support, jamais iCloud Drive ni un dossier
     /// synchronisé — le choix d'un autre emplacement avec migration vérifiée reste à câbler.
@@ -253,6 +254,19 @@ final class AppEnvironment {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         Task { try? await exportDocuments.exportSingle(documentID: result.id, toFolder: folder) }
+    }
+
+    // MARK: - Corbeille (EF-23, §5.9)
+
+    func loadTrash() async {
+        trashedDocuments = (try? await manageTrash.listTrashed()) ?? []
+    }
+
+    func restoreFromTrash(_ document: ManageTrash.TrashedDocument) {
+        trashedDocuments.removeAll { $0.id == document.id }
+        Task {
+            try? await manageTrash.restore(documentID: document.id)
+        }
     }
 
     // MARK: - Budget disque (EF-26)

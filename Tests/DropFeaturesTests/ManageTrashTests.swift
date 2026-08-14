@@ -68,6 +68,40 @@ private func makeDatabase() throws -> DropIndexDatabase {
     #expect(refCount == 1)
 }
 
+@Test func listTrashedReflectsCurrentTrashStateMostRecentFirst() async throws {
+    let fileSystem = InMemoryFileSystem()
+    let root = URL(fileURLWithPath: "/vault-root")
+    let sourceA = URL(fileURLWithPath: "/incoming/a.pdf")
+    let sourceB = URL(fileURLWithPath: "/incoming/b.pdf")
+    fileSystem.seed(sourceA.path, contents: Data("contenu a".utf8))
+    fileSystem.seed(sourceB.path, contents: Data("contenu b".utf8))
+
+    let vault = VaultService(vaultRoot: root, fileSystem: fileSystem)
+    let database = try makeDatabase()
+    let ingest = IngestFiles(vault: vault, database: database, sleeper: ImmediateSleeper())
+    guard case .created(let documentA) = try await ingest.ingest(fileAt: sourceA),
+          case .created(let documentB) = try await ingest.ingest(fileAt: sourceB)
+    else {
+        Issue.record("expected two created documents"); return
+    }
+
+    // Horloges distinctes : deux retraits à la même seconde donneraient un ordre de tri ambigu.
+    let trashA = ManageTrash(vault: vault, database: database, clock: FixedClock(date: Date(timeIntervalSince1970: 1_000)))
+    let trashB = ManageTrash(vault: vault, database: database, clock: FixedClock(date: Date(timeIntervalSince1970: 2_000)))
+    let trash = ManageTrash(vault: vault, database: database)
+    #expect(try await trash.listTrashed().isEmpty)
+
+    try await trashA.moveToTrash(documentID: documentA)
+    try await trashB.moveToTrash(documentID: documentB)
+
+    let trashed = try await trash.listTrashed()
+    #expect(trashed.map(\.id) == [documentB, documentA]) // le plus récemment retiré en premier.
+
+    try await trash.restore(documentID: documentA)
+    let afterRestore = try await trash.listTrashed()
+    #expect(afterRestore.map(\.id) == [documentB])
+}
+
 @Test func purgingExpiredTrashDeletesTheDocumentAndUnreferencedBlob() async throws {
     let fileSystem = InMemoryFileSystem()
     let root = URL(fileURLWithPath: "/vault-root")

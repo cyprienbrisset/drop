@@ -51,6 +51,35 @@ public struct ManageTrash: Sendable {
         }
     }
 
+    /// Résumé d'un document en corbeille pour l'affichage (EX-05, §5.9) — jamais le vocabulaire
+    /// « supprimer » : une action réversible tant que `purgeExpired` n'est pas passé.
+    public struct TrashedDocument: Sendable, Equatable, Identifiable {
+        public let id: String
+        public let displayName: String
+        public let trashedAt: Date
+        public let sizeBytes: Int64
+    }
+
+    /// Liste les documents en corbeille, les plus récemment retirés en premier. La conversion en
+    /// `TrashedDocument` (`Sendable`) se fait à l'intérieur de la fermeture : un `Row` GRDB ne
+    /// traverse pas la frontière `async` de `DatabasePool.read` (§4.2).
+    public func listTrashed() async throws -> [TrashedDocument] {
+        try await database.pool.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, display_name, trashed_at, size_bytes FROM documents
+                WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC
+                """
+            )
+            return rows.compactMap { row -> TrashedDocument? in
+                let trashedAtString: String = row["trashed_at"]
+                guard let trashedAt = Self.isoFormatter.date(from: trashedAtString) else { return nil }
+                return TrashedDocument(id: row["id"], displayName: row["display_name"], trashedAt: trashedAt, sizeBytes: row["size_bytes"])
+            }
+        }
+    }
+
     /// Restaure un document retiré, tant que la corbeille n'a pas encore été purgée.
     public func restore(documentID: String) async throws {
         try await database.pool.write { db in

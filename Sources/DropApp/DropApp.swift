@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
     private var searchWindow: NSWindow?
     private var preferencesWindow: NSWindow?
+    private var trashWindow: NSWindow?
 
     override init() {
         // `try!` assumé : si le coffre ne peut pas être créé (permissions, disque plein), l'app
@@ -48,8 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
-            rootView: DropZoneView(environment: environment, onOpenSearch: { [weak self] in self?.openSearchWindow() },
-                                    onOpenPreferences: { [weak self] in self?.openPreferencesWindow() })
+            rootView: DropZoneView(
+                environment: environment, onOpenSearch: { [weak self] in self?.openSearchWindow() },
+                onOpenPreferences: { [weak self] in self?.openPreferencesWindow() },
+                onOpenTrash: { [weak self] in self?.openTrashWindow() }
+            )
         )
     }
 
@@ -97,6 +101,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesWindow?.center()
         preferencesWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func openTrashWindow() {
+        popover.close()
+        NSApp.activate(ignoringOtherApps: true)
+
+        if trashWindow == nil {
+            let hosting = NSHostingController(rootView: TrashView(environment: environment))
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "Corbeille"
+            window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            trashWindow = window
+        }
+        trashWindow?.center()
+        trashWindow?.makeKeyAndOrderFront(nil)
     }
 }
 
