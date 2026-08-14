@@ -3,122 +3,431 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Drop — Coffre de documents local pour macOS</title>
-<meta name="description" content="No account. No cloud. No tracking. Drop est un coffre de documents local et chiffré pour macOS : déposez, comprenez, retrouvez.">
+<title>Drop — Un corbeau garde vos documents</title>
+<meta name="description" content="No account. No cloud. No tracking. Drop est un coffre de documents local et chiffré pour macOS, gardé par un corbeau : il rapporte, comprend et retrouve.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='30' fill='%230b0a10'/%3E%3Ccircle cx='24' cy='24' r='15' fill='%23e7e0d1'/%3E%3Cpath d='M14 20 L2 26 L14 30 Z' fill='%23e7e0d1'/%3E%3Ccircle cx='20' cy='21' r='2.4' fill='%230b0a10'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,450;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0b0c0f;
-    --bg-panel: #14161b;
-    --border: #23262d;
-    --text: #f3f4f6;
-    --text-dim: #9aa0aa;
-    --accent: #6ee7b7;
-    --accent-dim: #2c6e57;
+  :root{
+    --ink:        #0b0a10;
+    --ink-2:      #131219;
+    --ink-3:      #1c1a24;
+    --line:       rgba(231,224,209,0.11);
+    --paper:      #e7e0d1;
+    --paper-dim:  #9a9284;
+    --paper-faint:#5c5648;
+    --sheen-1:    #8a6bff;
+    --sheen-2:    #16c7b0;
+    --sheen-3:    #ff7b54;
+    --gradient-sheen: linear-gradient(115deg, var(--sheen-2) 0%, var(--sheen-1) 48%, var(--sheen-3) 100%);
+    --serif: "Fraunces", "Iowan Old Style", serif;
+    --body:  "Literata", Georgia, serif;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    line-height: 1.55;
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--body);
+    font-size:17px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
-  header.hero { padding: 96px 0 64px; text-align: center; }
-  .badge {
-    display: inline-flex; gap: 8px; align-items: center;
-    font-size: 13px; color: var(--accent);
-    background: rgba(110, 231, 183, 0.08);
-    border: 1px solid var(--accent-dim);
-    border-radius: 999px; padding: 6px 14px; margin-bottom: 28px;
+
+  /* ---------- atmosphere ---------- */
+  body::before{
+    content:"";
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 70% 50% at 82% -6%, rgba(138,107,255,0.16), transparent 60%),
+      radial-gradient(ellipse 60% 45% at 8% 8%, rgba(22,199,176,0.10), transparent 60%),
+      radial-gradient(ellipse 90% 60% at 50% 110%, rgba(0,0,0,0.55), transparent 60%);
   }
-  h1 { font-size: 44px; margin: 0 0 16px; letter-spacing: -0.02em; }
-  .tagline { font-size: 19px; color: var(--text-dim); max-width: 560px; margin: 0 auto 36px; }
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .btn {
-    display: inline-block; padding: 12px 22px; border-radius: 10px;
-    text-decoration: none; font-weight: 600; font-size: 15px;
+  .grain{
+    position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0.5; mix-blend-mode:overlay;
   }
-  .btn.primary { background: var(--accent); color: #06251b; }
-  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  section.flow { padding: 40px 0; border-top: 1px solid var(--border); }
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 28px; }
-  .step { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
-  .step .n { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; }
-  .step h3 { margin: 10px 0 6px; font-size: 18px; }
-  .step p { margin: 0; color: var(--text-dim); font-size: 14.5px; }
-  section.features { padding: 48px 0; border-top: 1px solid var(--border); }
-  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 24px; }
-  .card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
-  .card h3 { margin: 0 0 6px; font-size: 16px; }
-  .card p { margin: 0; color: var(--text-dim); font-size: 14.5px; }
-  footer { padding: 48px 0 80px; text-align: center; color: var(--text-dim); font-size: 13.5px; border-top: 1px solid var(--border); }
-  footer a { color: var(--text-dim); }
-  @media (max-width: 720px) {
-    .steps, .grid { grid-template-columns: 1fr; }
-    h1 { font-size: 34px; }
+
+  .wrap{max-width:1040px; margin:0 auto; padding:0 28px; position:relative; z-index:2;}
+
+  a{color:inherit;}
+
+  /* ---------- nav ---------- */
+  nav.top{
+    position:sticky; top:0; z-index:20;
+    backdrop-filter:blur(10px);
+    background:rgba(11,10,16,0.72);
+    border-bottom:1px solid var(--line);
+  }
+  nav.top .wrap{display:flex; align-items:center; justify-content:space-between; height:64px;}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none;}
+  .brand svg{width:26px; height:26px; flex:none;}
+  .brand span{
+    font-family:var(--mono); font-size:14px; letter-spacing:0.22em; font-weight:600;
+    color:var(--paper); text-transform:uppercase;
+  }
+  .nav-links{display:flex; gap:28px; align-items:center;}
+  .nav-links a{
+    font-family:var(--mono); font-size:12.5px; letter-spacing:0.06em; text-decoration:none;
+    color:var(--paper-dim); transition:color .2s ease;
+  }
+  .nav-links a:hover{color:var(--paper);}
+  .nav-links a.gh{
+    color:var(--ink); background:var(--paper); padding:8px 14px; border-radius:7px; font-weight:600;
+  }
+  .nav-links a.gh:hover{background:#fff;}
+
+  /* ---------- hero ---------- */
+  header.hero{position:relative; padding:96px 0 60px; overflow:visible;}
+  .crow-hero{
+    position:absolute; top:-40px; right:-60px; width:440px; height:auto;
+    opacity:0.94; z-index:0; filter:drop-shadow(0 30px 60px rgba(0,0,0,0.55));
+    animation:perch 7s ease-in-out infinite;
+  }
+  @keyframes perch{
+    0%,100%{ transform:translateY(0) rotate(0deg); }
+    50%{ transform:translateY(-6px) rotate(-0.6deg); }
+  }
+  .hero-content{position:relative; z-index:2; max-width:620px;}
+  .kicker{
+    display:inline-flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:12px; letter-spacing:0.05em;
+    color:var(--sheen-2); border:1px solid rgba(22,199,176,0.35);
+    background:rgba(22,199,176,0.07); border-radius:999px; padding:7px 14px 7px 10px;
+    margin-bottom:34px;
+    animation:rise .7s cubic-bezier(.2,.9,.2,1) both;
+  }
+  .kicker .dot{width:6px; height:6px; border-radius:50%; background:var(--sheen-2); box-shadow:0 0 8px var(--sheen-2);}
+
+  h1.wordmark{
+    font-family:var(--serif); font-weight:600; font-style:italic;
+    font-size:clamp(64px, 11vw, 108px); line-height:0.92; letter-spacing:-0.01em;
+    margin:0 0 22px;
+    background:var(--gradient-sheen);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    background-size:220% 220%;
+    animation:rise .8s cubic-bezier(.2,.9,.2,1) both .08s, iridesce 9s ease-in-out infinite;
+  }
+  @keyframes iridesce{
+    0%,100%{background-position:0% 50%;}
+    50%{background-position:100% 50%;}
+  }
+  p.tagline{
+    font-family:var(--body); font-size:20px; color:var(--paper-dim); max-width:480px; margin:0 0 40px;
+    animation:rise .8s cubic-bezier(.2,.9,.2,1) both .16s;
+  }
+  p.tagline em{color:var(--paper); font-style:italic;}
+
+  .cta{display:flex; gap:14px; flex-wrap:wrap; animation:rise .8s cubic-bezier(.2,.9,.2,1) both .24s;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:13px 22px; border-radius:9px; text-decoration:none;
+    font-family:var(--mono); font-weight:500; font-size:13.5px; letter-spacing:0.02em;
+    transition:transform .18s ease, background .18s ease, border-color .18s ease;
+  }
+  .btn.primary{background:var(--paper); color:var(--ink);}
+  .btn.primary:hover{transform:translateY(-2px); background:#fff;}
+  .btn.ghost{background:transparent; color:var(--paper); border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--paper-faint); transform:translateY(-2px);}
+
+  @keyframes rise{from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);}}
+
+  /* ---------- section shells ---------- */
+  section{padding:88px 0; border-top:1px solid var(--line); position:relative;}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--sheen-1); margin:0 0 14px; display:block;
+  }
+  h2.section-title{
+    font-family:var(--serif); font-weight:600; font-size:clamp(30px,4vw,42px);
+    margin:0 0 18px; letter-spacing:-0.01em; max-width:640px;
+  }
+  p.section-lede{color:var(--paper-dim); max-width:560px; font-size:17.5px; margin:0 0 56px;}
+
+  /* ---------- flow / ledger ---------- */
+  .ledger{position:relative; margin-left:6px;}
+  .ledger::before{
+    content:""; position:absolute; left:19px; top:6px; bottom:6px; width:1px;
+    background:linear-gradient(var(--sheen-2), var(--sheen-1), var(--sheen-3));
+    opacity:0.4;
+  }
+  .ledger-item{position:relative; padding-left:64px; margin-bottom:56px;}
+  .ledger-item:last-child{margin-bottom:0;}
+  .ledger-numeral{
+    position:absolute; left:0; top:-4px; width:40px; height:40px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--serif); font-style:italic; font-weight:600; font-size:16px;
+    color:var(--ink); background:var(--paper); border-radius:50%;
+  }
+  .ledger-item h3{
+    font-family:var(--serif); font-size:24px; font-weight:600; margin:0 0 8px;
+  }
+  .ledger-item p{color:var(--paper-dim); margin:0; max-width:520px;}
+  .ledger-item .tag{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:0.08em; color:var(--sheen-2);
+    text-transform:uppercase; display:block; margin-bottom:6px;
+  }
+
+  /* ---------- features dossier ---------- */
+  .dossier{display:grid; grid-template-columns:repeat(2, 1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:18px; overflow:hidden;}
+  .dossier-card{background:var(--ink-2); padding:34px 32px;}
+  .dossier-card h3{
+    font-family:var(--serif); font-size:21px; font-weight:600; margin:0 0 4px; display:flex; align-items:center; gap:10px;
+  }
+  .dossier-card h3 svg{width:18px; height:18px; flex:none; opacity:0.85;}
+  .dossier-card > p.desc{color:var(--paper-dim); font-size:14.5px; margin:0 0 18px;}
+  .dossier-card ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:11px;}
+  .dossier-card li{
+    display:flex; gap:10px; align-items:flex-start; font-size:15px; color:var(--paper);
+  }
+  .dossier-card li svg{width:12px; height:12px; margin-top:5px; flex:none; color:var(--sheen-2);}
+  .dossier-card li b{color:var(--paper); font-weight:600;}
+  .dossier-card li span{color:var(--paper-dim);}
+
+  @media (max-width:760px){ .dossier{grid-template-columns:1fr;} }
+
+  /* ---------- manifest ---------- */
+  .manifest{
+    font-family:var(--mono); font-size:13.5px; border:1px solid var(--line); border-radius:14px;
+    background:var(--ink-2); overflow:hidden;
+  }
+  .manifest .row{
+    display:grid; grid-template-columns:170px 1fr; gap:18px; padding:13px 22px;
+    border-bottom:1px solid var(--line);
+  }
+  .manifest .row:last-child{border-bottom:none;}
+  .manifest .row:hover{background:var(--ink-3);}
+  .manifest .mod{color:var(--sheen-2); font-weight:600;}
+  .manifest .role{color:var(--paper-dim);}
+
+  /* ---------- footer ---------- */
+  footer{padding:64px 0 90px; text-align:center;}
+  footer .crow-small{width:34px; height:34px; margin:0 auto 20px; opacity:0.8;}
+  footer p{margin:0 0 8px; color:var(--paper-dim); font-size:14px;}
+  footer .colophon{font-family:var(--serif); font-style:italic; color:var(--paper); font-size:16px; margin-bottom:22px;}
+  footer a.repo{color:var(--sheen-2); text-decoration:none; font-family:var(--mono); font-size:13.5px;}
+  footer a.repo:hover{text-decoration:underline;}
+
+  @media (max-width:640px){
+    header.hero{padding-top:64px;}
+    .crow-hero{width:260px; top:-10px; right:-40px; opacity:0.5;}
+    h1.wordmark{font-size:64px;}
+    p.tagline{font-size:18px;}
+    .nav-links a:not(.gh){display:none;}
   }
 </style>
 </head>
 <body>
+
+<svg class="grain" width="0" height="0">
+  <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0"/></filter>
+</svg>
+<div class="grain" style="filter:url(#noise); background:#000;"></div>
+
+<!-- ============ NAV ============ -->
+<nav class="top">
   <div class="wrap">
-    <header class="hero">
-      <div class="badge">● No account · No cloud · No tracking</div>
-      <h1>Drop</h1>
-      <p class="tagline">Un coffre de documents local et chiffré pour macOS. Déposez un fichier, Drop en comprend le contenu et vous le retrouve en langage naturel — sans jamais quitter votre Mac.</p>
-      <div class="cta">
-        <a class="btn primary" href="https://github.com/cyprienbrisset/drop">Voir le code sur GitHub</a>
-        <a class="btn ghost" href="https://github.com/cyprienbrisset/drop#développement">Compiler en local</a>
-      </div>
-    </header>
-
-    <section class="flow">
-      <h2 style="margin:0;">Un parcours en trois temps</h2>
-      <div class="steps">
-        <div class="step">
-          <div class="n">01 · DROP</div>
-          <h3>Déposez</h3>
-          <p>Glissez un document sur l'icône de la barre de menus. Chiffré et dédupliqué sur disque, immédiatement.</p>
-        </div>
-        <div class="step">
-          <div class="n">02 · UNDERSTAND</div>
-          <h3>Comprenez</h3>
-          <p>Extraction de texte, OCR de repli, détection d'entités (montants, dates, IBAN, SIRET) et classification sur l'appareil.</p>
-        </div>
-        <div class="step">
-          <div class="n">03 · FIND</div>
-          <h3>Retrouvez</h3>
-          <p>Une recherche façon Spotlight (⌥ Espace, partout sur le Mac) en langage naturel — texte, sens, montants et dates.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="features">
-      <h2 style="margin:0;">Pensé pour rester privé</h2>
-      <div class="grid">
-        <div class="card">
-          <h3>Chiffré au repos</h3>
-          <p>AES-256 via SQLCipher, clé générée et gardée dans le Keychain de la machine — jamais sur disque en clair.</p>
-        </div>
-        <div class="card">
-          <h3>Zéro réseau</h3>
-          <p>Aucun compte, aucune synchronisation. La compréhension du contenu tourne entièrement sur l'intelligence embarquée d'Apple.</p>
-        </div>
-        <div class="card">
-          <h3>Robuste par construction</h3>
-          <p>Vérification d'intégrité périodique, reconstruction de dernier recours depuis les fichiers seuls si l'index est corrompu.</p>
-        </div>
-        <div class="card">
-          <h3>Respectueux de vos corrections</h3>
-          <p>Un champ corrigé à la main (type, émetteur, date) n'est plus jamais réécrit automatiquement par la suite.</p>
-        </div>
-      </div>
-    </section>
-
-    <footer>
-      <p>Drop est un projet open source, en développement actif.</p>
-      <p><a href="https://github.com/cyprienbrisset/drop">github.com/cyprienbrisset/drop</a></p>
-    </footer>
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 60 60" fill="none"><circle cx="27" cy="27" r="16" fill="var(--paper)"/><path d="M16 22 L2 27 L16 32 Z" fill="var(--paper)"/><circle cx="22" cy="23" r="2.6" fill="var(--ink)"/></svg>
+      <span>Drop</span>
+    </a>
+    <div class="nav-links">
+      <a href="#pacte">Le pacte</a>
+      <a href="#dossier">Fonctionnalités</a>
+      <a href="#manifeste">Architecture</a>
+      <a class="gh" href="https://github.com/cyprienbrisset/drop">GitHub ↗</a>
+    </div>
   </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="wrap">
+
+    <!-- Large perched crow, hand-drawn silhouette with iridescent wing -->
+    <svg class="crow-hero" viewBox="-10 0 260 220" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="wingSheen" x1="90" y1="90" x2="205" y2="180" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#16c7b0"/>
+          <stop offset="50%" stop-color="#8a6bff"/>
+          <stop offset="100%" stop-color="#ff7b54"/>
+        </linearGradient>
+        <linearGradient id="bodyFade" x1="60" y1="80" x2="210" y2="190" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#232030"/>
+          <stop offset="100%" stop-color="#0b0a10"/>
+        </linearGradient>
+      </defs>
+
+      <!-- branch -->
+      <line x1="45" y1="207" x2="205" y2="207" stroke="#3a3546" stroke-width="3" stroke-linecap="round"/>
+      <line x1="70" y1="207" x2="60" y2="198" stroke="#3a3546" stroke-width="2" stroke-linecap="round"/>
+      <line x1="170" y1="207" x2="182" y2="197" stroke="#3a3546" stroke-width="2" stroke-linecap="round"/>
+
+      <!-- legs -->
+      <path d="M113,182 L108,206" stroke="#0b0a10" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M141,186 L149,208" stroke="#0b0a10" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M108,206 L98,210 M108,206 L110,213 M108,206 L119,210" stroke="#0b0a10" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M149,208 L139,212 M149,208 L151,215 M149,208 L160,212" stroke="#0b0a10" stroke-width="2.6" stroke-linecap="round"/>
+
+      <!-- body -->
+      <path d="M70,150 C70,120 85,95 115,90 C150,84 185,100 205,130 C215,145 210,165 195,178 C175,195 145,198 120,190 C95,182 70,175 70,150 Z" fill="url(#bodyFade)"/>
+
+      <!-- wing, iridescent — silhouette de plume plutôt qu'une goutte pleine -->
+      <path d="M100,96 C125,84 160,86 185,105 C200,117 202,130 195,142 C185,155 160,152 140,148 C155,140 165,128 158,116 C148,102 122,98 100,96 Z" fill="url(#wingSheen)" opacity="0.92"/>
+      <path d="M112,104 C132,100 152,106 166,118" stroke="rgba(231,224,209,0.32)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path d="M118,118 C136,116 152,122 162,132" stroke="rgba(231,224,209,0.2)" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+
+      <!-- head -->
+      <circle cx="58" cy="82" r="27" fill="#171521"/>
+      <!-- beak -->
+      <path d="M30,72 L-6,82 L30,92 Z" fill="#171521"/>
+      <!-- eye -->
+      <circle cx="49" cy="75" r="4.2" fill="var(--paper)"/>
+      <circle cx="49" cy="75" r="1.5" fill="#0b0a10"/>
+
+      <!-- tail feathers, par-dessus le corps : elles doivent se voir dépasser -->
+      <path d="M188,130 L231,101 L199,147 Z" fill="#0b0a10"/>
+      <path d="M192,145 L236,133 L201,160 Z" fill="#131219"/>
+      <path d="M188,158 L227,169 L197,173 Z" fill="#0b0a10"/>
+    </svg>
+
+    <div class="hero-content">
+      <div class="kicker"><span class="dot"></span>No account · No cloud · No tracking</div>
+      <h1 class="wordmark">Drop</h1>
+      <p class="tagline">Un corbeau garde vos documents. Vous les déposez, il les <em>comprend</em>, il vous les <em>rapporte</em> — sans jamais quitter votre Mac.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/cyprienbrisset/drop">Voir le nid sur GitHub</a>
+        <a class="btn ghost" href="#dossier">Explorer les fonctionnalités</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ LE PACTE (parcours) ============ -->
+<section id="pacte">
+  <div class="wrap">
+    <span class="eyebrow">Le pacte</span>
+    <h2 class="section-title">Trois gestes, une seule promesse : rien ne sort de la machine.</h2>
+    <p class="section-lede">Comme un corbeau qui rapporte, range et retrouve ce qu'il a caché — sans jamais rien montrer à personne d'autre.</p>
+
+    <div class="ledger">
+      <div class="ledger-item">
+        <div class="ledger-numeral">I</div>
+        <span class="tag">Drop</span>
+        <h3>Déposez</h3>
+        <p>Glissez un fichier sur l'icône de la barre de menus. Il est chiffré, dédupliqué par contenu et rangé dans le coffre — immédiatement, sans écran d'attente.</p>
+      </div>
+      <div class="ledger-item">
+        <div class="ledger-numeral">II</div>
+        <span class="tag">Understand</span>
+        <h3>Il comprend</h3>
+        <p>Texte extrait, entités reconnues, type et émetteur déduits sur l'appareil — jamais via une API tierce, jamais en réécrivant ce que vous avez corrigé vous-même.</p>
+      </div>
+      <div class="ledger-item">
+        <div class="ledger-numeral">III</div>
+        <span class="tag">Find</span>
+        <h3>Vous le retrouvez</h3>
+        <p>⌥ Espace, où que vous soyez sur le Mac. Une recherche en langage naturel — texte, sens, montants, dates — comme si le corbeau savait déjà où chercher.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DOSSIER (fonctionnalités détaillées) ============ -->
+<section id="dossier">
+  <div class="wrap">
+    <span class="eyebrow">L'inventaire</span>
+    <h2 class="section-title">Ce que le corbeau sait faire</h2>
+    <p class="section-lede">Quatre familles de compétences, du dépôt à la confidentialité — chacune pensée pour ne jamais vous surprendre.</p>
+
+    <div class="dossier">
+
+      <div class="dossier-card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v13m0 0-5-5m5 5 5-5M4 20h16"/></svg>Dépôt &amp; extraction</h3>
+        <p class="desc">Tout ce qui se passe entre le glisser-déposer et un document réellement lisible.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Zone de dépôt</b> sur l'icône de la barre de menus, avec retour visuel en temps réel (dépôt, doublon, échec).</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Formats natifs</b> : PDF, texte brut, RTF/RTFD, HTML, DOCX, XLSX, PPTX et images.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>OCR automatique</b> sur les pages scannées ou trop peu denses en texte, via Vision — jamais un envoi hors de la machine.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Déduplication par contenu</b> : le même fichier déposé deux fois ne prend jamais deux fois la place.</span></li>
+        </ul>
+      </div>
+
+      <div class="dossier-card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2a7 7 0 0 1 7 7c0 3-2 4-2 7H7c0-3-2-4-2-7a7 7 0 0 1 7-7Z"/><path d="M9 20h6M10 22h4"/></svg>Compréhension</h3>
+        <p class="desc">Le corbeau lit, classe et retient — sans jamais réviser ce que vous avez tranché.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Entités déterministes</b> : IBAN, SIRET/SIREN, TVA, montants, dates, emails, téléphones, organisations connues.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Classification &amp; résumé</b> par modèle de langage embarqué (Apple Intelligence quand disponible).</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Corrections verrouillées</b> : un champ corrigé à la main (type, émetteur, date) n'est plus jamais réécrit automatiquement.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Échéances détectées</b> (« date limite », « échéance le »...) avec rappel local — jamais programmé sans votre accord.</span></li>
+        </ul>
+      </div>
+
+      <div class="dossier-card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Recherche &amp; organisation</h3>
+        <p class="desc">Retrouver un document doit prendre le temps d'y penser, pas plus.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Recherche façon Spotlight</b> (⌥ Espace, partout sur le Mac) : lexicale, tolérante aux fautes et sémantique.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Filtres naturels</b> sur montant, date et type — « facture edf juillet », « contrat &gt; 500€ ».</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Tags libres</b>, partagés entre documents, et export unitaire ou massif avec reprise sur interruption.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Corbeille</b> avec délai de rétention avant purge, restauration en un clic.</span></li>
+        </ul>
+      </div>
+
+      <div class="dossier-card">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/></svg>Confidentialité &amp; robustesse</h3>
+        <p class="desc">Ce qui protège le coffre quand personne ne regarde.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Chiffré au repos</b> (AES-256 via SQLCipher), clé générée et gardée dans le Keychain — jamais sur disque en clair.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Zéro réseau</b> pour les fonctions cœur : pas de compte, pas de synchronisation, pas de télémétrie.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Vérification d'intégrité</b> périodique, reconstruction de dernier recours depuis les fichiers seuls si l'index est corrompu.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg><span><b>Import assisté</b> d'un coffre existant, fusionné sans jamais créer de doublon.</span></li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ MANIFESTE (architecture) ============ -->
+<section id="manifeste">
+  <div class="wrap">
+    <span class="eyebrow">Sous l'aile</span>
+    <h2 class="section-title">L'inventaire du nid</h2>
+    <p class="section-lede">Un paquet Swift 6 multi-module, à concurrence stricte, ciblant macOS 26+. Chaque module a un rôle et un seul.</p>
+
+    <div class="manifest">
+      <div class="row"><span class="mod">DropCore</span><span class="role">socle — types, erreurs, horloge/FS injectables, Keychain, notifications</span></div>
+      <div class="row"><span class="mod">DropVault</span><span class="role">coffre chiffré sur disque — blobs, déduplication, chiffrement par blob</span></div>
+      <div class="row"><span class="mod">DropIndex</span><span class="role">index.db (SQLite/SQLCipher via GRDB), migrations, schéma</span></div>
+      <div class="row"><span class="mod">DropExtraction</span><span class="role">extraction de texte — PDF, OOXML, images, OCR Vision</span></div>
+      <div class="row"><span class="mod">DropEntities</span><span class="role">extraction déterministe d'entités — montants, dates, IBAN, SIRET…</span></div>
+      <div class="row"><span class="mod">DropIntelligence</span><span class="role">classification &amp; résumé via modèle de langage sur l'appareil</span></div>
+      <div class="row"><span class="mod">DropEmbeddings</span><span class="role">embeddings sémantiques &amp; recherche vectorielle (sqlite-vec)</span></div>
+      <div class="row"><span class="mod">DropSearch</span><span class="role">analyse de requête en langage naturel</span></div>
+      <div class="row"><span class="mod">DropJobs</span><span class="role">file de travaux persistante — analyse en tâche de fond</span></div>
+      <div class="row"><span class="mod">DropLicense</span><span class="role">vérification de licence, plafond version gratuite</span></div>
+      <div class="row"><span class="mod">DropFeatures</span><span class="role">cas d'usage métier — ingestion, recherche, corrections, import, rappels…</span></div>
+      <div class="row"><span class="mod">DropApp</span><span class="role">application AppKit/SwiftUI — barre de menus, recherche, préférences</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <svg class="crow-small" viewBox="0 0 60 60" fill="none"><circle cx="27" cy="27" r="16" fill="var(--paper)"/><path d="M16 22 L2 27 L16 32 Z" fill="var(--paper)"/><circle cx="22" cy="23" r="2.6" fill="var(--ink)"/></svg>
+    <p class="colophon">« Le corbeau range tout, et n'oublie jamais où. »</p>
+    <p>Projet open source, en développement actif — licence à préciser.</p>
+    <p><a class="repo" href="https://github.com/cyprienbrisset/drop">github.com/cyprienbrisset/drop</a></p>
+  </div>
+</footer>
+
 </body>
 </html>
