@@ -69,6 +69,7 @@ let package = Package(
         .testTarget(name: "DropCoreTests", dependencies: ["DropCore"]),
         .testTarget(name: "DropVaultTests", dependencies: ["DropVault"]),
         .testTarget(name: "DropIndexTests", dependencies: ["DropIndex"]),
+        .testTarget(name: "DropExtractionTests", dependencies: ["DropExtraction"]),
         .testTarget(name: "DropEmbeddingsTests", dependencies: ["DropEmbeddings"]),
         .testTarget(name: "DropSearchTests", dependencies: ["DropSearch"]),
         .testTarget(name: "DropLicenseTests", dependencies: ["DropLicense"]),
