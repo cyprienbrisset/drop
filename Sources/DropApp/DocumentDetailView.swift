@@ -72,6 +72,8 @@ struct DocumentDetailView: View {
             Text(value)
                 .font(.callout)
         }
+        // EX-09/ENF-40 : « Type, facture » plutôt que deux éléments VoiceOver disjoints.
+        .accessibilityElement(children: .combine)
     }
 
     private var actions: some View {

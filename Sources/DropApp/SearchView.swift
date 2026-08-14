@@ -84,6 +84,7 @@ private struct DocumentResultRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "doc.text")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.displayName)
                     .font(.body)
@@ -104,6 +105,9 @@ private struct DocumentResultRow: View {
             }
         }
         .padding(.vertical, 4)
+        // EX-09/ENF-40 : une seule annonce cohérente par ligne (nom, type, résumé) plutôt que des
+        // éléments disjoints — VoiceOver ajoute déjà la position dans la liste automatiquement.
+        .accessibilityElement(children: .combine)
     }
 }
 
