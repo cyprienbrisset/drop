@@ -12,6 +12,7 @@ struct PreferencesView: View {
 
     @State private var budget = VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
     @State private var documentCount = 0
+    @State private var remindersEnabled = false
 
     var body: some View {
         Form {
@@ -29,6 +30,14 @@ struct PreferencesView: View {
                 }
             }
 
+            Section("Rappels d'échéance") {
+                Toggle("Me rappeler des échéances détectées", isOn: $remindersEnabled)
+                    .onChange(of: remindersEnabled) { _, newValue in environment.setRemindersEnabled(newValue) }
+                Text("Une notification locale est proposée pour les documents où une échéance a été détectée. Désactivé par défaut ; l'activer déclenche la demande d'autorisation système.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Budget disque") {
                 LabeledContent("Taille du coffre", value: Self.formatBytes(budget.vaultSizeBytes))
                 LabeledContent("Économie de déduplication", value: Self.formatBytes(budget.dedupSavingsBytes))
@@ -41,6 +50,7 @@ struct PreferencesView: View {
         .task {
             budget = await environment.computeBudget()
             documentCount = (try? await environment.activeDocumentCount()) ?? 0
+            remindersEnabled = await environment.remindersEnabled()
         }
     }
 

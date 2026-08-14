@@ -31,6 +31,9 @@ public struct DropIndexDatabase: Sendable {
         migrator.registerMigration("v1_create_schema") { db in
             try createV1Schema(db)
         }
+        migrator.registerMigration("v2_add_due_date") { db in
+            try createV2AddDueDate(db)
+        }
         return migrator
     }
 }

@@ -24,6 +24,7 @@ public struct AnalyzeDocument: Sendable {
     private let extractor = DocumentTextExtractor()
     private let amountExtractor = AmountExtractor()
     private let dateExtractor = DateExtractor()
+    private let dueDateExtractor = DueDateExtractor()
     private let identifierExtractor = IdentifierExtractor()
     private let issuerDictionary = IssuerDictionary()
     private let insightGenerator: DocumentInsightGenerator
@@ -56,12 +57,16 @@ public struct AnalyzeDocument: Sendable {
         let entities: [ExtractedEntity] = pages.flatMap { page in
             amountExtractor.extract(from: page.content, pageNo: page.pageNumber)
                 + dateExtractor.extract(from: page.content, pageNo: page.pageNumber)
+                + dueDateExtractor.extract(from: page.content, pageNo: page.pageNumber)
                 + identifierExtractor.extract(from: page.content, pageNo: page.pageNumber)
                 + issuerDictionary.match(in: page.content)
         }
 
         let deterministicIssuer = entities.first { $0.kind == .org }?.valueText
         let effectiveDate = Self.resolveEffectiveDate(entities: entities, addedAt: addedAt)
+        // Première échéance trouvée, par ordre d'apparition dans le document (§5.3.3, même
+        // prudence que la date effective : jamais de choix "le plus probable" plus élaboré ici).
+        let dueDate = entities.first { $0.kind == .dueDate }?.valueDate
 
         let context = contextSelector.select(
             pages: pages.map { PageContent(pageNumber: $0.pageNumber, text: $0.content) },
@@ -117,12 +122,13 @@ public struct AnalyzeDocument: Sendable {
                     effective_date = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date END,
                     effective_date_src = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date_src END,
                     summary = COALESCE(?, summary),
+                    due_date = COALESCE(?, due_date),
                     analysis_state = 'done'
                 WHERE id = ?
                 """,
                 arguments: [
                     insight?.type.rawValue, insight?.confidence, issuer, effectiveDate?.date,
-                    effectiveDate?.source.rawValue, insight?.summary, documentID,
+                    effectiveDate?.source.rawValue, insight?.summary, dueDate, documentID,
                 ]
             )
 

@@ -10,16 +10,18 @@ import Foundation
 public actor JobWorker {
     private let jobQueue: JobQueue
     private let analyzeDocument: AnalyzeDocument
+    private let scheduleReminders: ScheduleReminders?
     private let sleeper: Sleeper
     private let idlePollSeconds: Double
     private var runningTask: Task<Void, Never>?
 
     public init(
-        jobQueue: JobQueue, analyzeDocument: AnalyzeDocument, sleeper: Sleeper = SystemSleeper(),
-        idlePollSeconds: Double = 2
+        jobQueue: JobQueue, analyzeDocument: AnalyzeDocument, scheduleReminders: ScheduleReminders? = nil,
+        sleeper: Sleeper = SystemSleeper(), idlePollSeconds: Double = 2
     ) {
         self.jobQueue = jobQueue
         self.analyzeDocument = analyzeDocument
+        self.scheduleReminders = scheduleReminders
         self.sleeper = sleeper
         self.idlePollSeconds = idlePollSeconds
     }
@@ -44,6 +46,7 @@ public actor JobWorker {
         guard let job = try? await jobQueue.dequeueNext(kinds: [.extract]), let jobID = job.id else { return false }
         do {
             try await analyzeDocument.analyze(documentID: job.documentID)
+            try? await scheduleReminders?.scheduleIfNeeded(documentID: job.documentID)
             try await jobQueue.complete(jobID: jobID)
         } catch {
             try? await jobQueue.fail(jobID: jobID, error: String(describing: error))

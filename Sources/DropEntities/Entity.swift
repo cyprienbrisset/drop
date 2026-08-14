@@ -3,6 +3,10 @@
 public struct ExtractedEntity: Sendable {
     public enum Kind: String, Sendable {
         case amount, date, iban, siret, siren, vat, invoiceRef, orderRef, org, email, phone, person
+        /// Date d'échéance (§5, backlog V2, DRO-84) : distincte de `date`, qui ne porte aucune
+        /// indication de rôle sémantique — celle-ci ne provient que d'un contexte explicite
+        /// (« à régler avant le », « date limite », « échéance le »...).
+        case dueDate
     }
 
     public enum Extractor: String, Sendable {

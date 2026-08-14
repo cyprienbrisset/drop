@@ -46,6 +46,7 @@ final class AppEnvironment {
     private let manageTags: ManageTags
     private let verifyVaultIntegrity: VerifyVaultIntegrity
     private let importVaultUseCase: ImportVault
+    private let scheduleReminders: ScheduleReminders
     private let queryParser = QueryParser()
 
     /// Cadence de la boucle d'entretien (purge de la corbeille échue, EF-23) — la vérification
@@ -95,7 +96,8 @@ final class AppEnvironment {
         self.manageTags = ManageTags(database: indexDatabase)
         self.verifyVaultIntegrity = VerifyVaultIntegrity(database: indexDatabase, vault: vault)
         self.importVaultUseCase = ImportVault(vault: vault, database: indexDatabase)
-        self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
+        self.scheduleReminders = ScheduleReminders(database: indexDatabase, scheduler: SystemNotificationScheduler())
+        self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument, scheduleReminders: scheduleReminders)
         Task { await self.jobWorker.start() }
         Task { await self.runMaintenanceLoop() }
     }
@@ -453,6 +455,18 @@ final class AppEnvironment {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
+    }
+
+    // MARK: - Rappels d'échéance (DRO-84)
+
+    func remindersEnabled() async -> Bool {
+        (try? await scheduleReminders.remindersEnabled()) ?? false
+    }
+
+    /// Jamais appelé automatiquement (§CDC) : seule une action explicite de l'utilisateur dans
+    /// les Préférences déclenche l'activation, et donc la demande d'autorisation système qui suit.
+    func setRemindersEnabled(_ enabled: Bool) {
+        Task { try? await scheduleReminders.setRemindersEnabled(enabled) }
     }
 
     // MARK: - Corrections (EF-48)
