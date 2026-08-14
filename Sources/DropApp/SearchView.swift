@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Barre de recherche globale + résultats (EX-02, EF-60, EF-67), type Spotlight. Navigation
 /// clavier intégrale (EX-04) : ↑↓ sélection (gérée nativement par `List`), ↵ ouvrir, ⌘↵ révéler
-/// dans le Finder, Espace Quick Look, ⌘⌫ retirer. Recherche en direct : chaque frappe relance
+/// dans le Finder, Espace Quick Look, ⌘⌫ retirer, double-clic pour la fiche détaillée
+/// (`DocumentDetailView`, EX-03). Recherche en direct : chaque frappe relance
 /// `environment.search` après un court débounce (150 ms), sans jamais réordonner sous le focus
 /// clavier — `List` conserve la sélection par identifiant, pas par position.
 struct SearchView: View {
@@ -12,6 +13,7 @@ struct SearchView: View {
     @State private var queryText: String = ""
     @State private var selection: String?
     @State private var quickLookURL: URL?
+    @State private var detailResult: DocumentSearchResult?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +50,8 @@ struct SearchView: View {
                 List(environment.searchResults, selection: $selection) { result in
                     DocumentResultRow(result: result)
                         .tag(result.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { detailResult = result }
                 }
                 .listStyle(.plain)
             }
@@ -77,6 +81,18 @@ struct SearchView: View {
             return .handled
         }
         .quickLookPreview($quickLookURL)
+        .sheet(item: $detailResult) { result in
+            DocumentDetailView(
+                result: result,
+                onOpen: { environment.open(result) },
+                onReveal: { environment.reveal(result) },
+                onExport: { environment.export(result) },
+                onRemove: {
+                    environment.remove(result)
+                    detailResult = nil
+                }
+            )
+        }
     }
 
     private var selectedResult: DocumentSearchResult? {

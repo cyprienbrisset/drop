@@ -238,6 +238,20 @@ final class AppEnvironment {
         Task { try? await manageTrash.moveToTrash(documentID: result.id) }
     }
 
+    /// EF-24 : export unitaire, choix du dossier de destination via un panneau système standard.
+    func export(_ result: DocumentSearchResult) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Exporter ici"
+        panel.message = "Choisissez un dossier de destination pour « \(result.displayName) »"
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        Task { try? await exportDocuments.exportSingle(documentID: result.id, toFolder: folder) }
+    }
+
     // MARK: - Budget disque (EF-26)
 
     func computeBudget() async -> VaultBudget {
