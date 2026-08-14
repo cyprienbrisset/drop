@@ -1,3 +1,4 @@
+import CryptoKit
 import DropCore
 import Foundation
 
@@ -59,8 +60,16 @@ public struct VaultService: Sendable {
     /// - I1 : rien n'est fait à l'original avant que l'appelant ne committe la transaction DB.
     /// - I4 : un blob n'est jamais modifié en place, jamais réécrit s'il existe déjà.
     /// - I5 : un crash ici laisse au pire un fichier `tmp/*.part` orphelin, jamais de perte.
-    public func writeBlob(fromFileAt sourceURL: URL, originalPath: String? = nil) throws -> BlobWriteResult {
+    ///
+    /// Mode Renforcé (§5.11) : `masterKey` est requis, le fichier écrit sur `vault/` est le
+    /// chiffré AES-256-GCM, mais le hash content-addressé (nom du fichier, EF-05) reste celui du
+    /// contenu en clair — la déduplication ne dépend jamais du mode de chiffrement.
+    public func writeBlob(
+        fromFileAt sourceURL: URL, originalPath: String? = nil,
+        encryptionMode: EncryptionMode = .standard, masterKey: Data? = nil
+    ) throws -> BlobWriteResult {
         guard fileSystem.fileExists(at: sourceURL) else { throw IngestionError.unreadable }
+        if encryptionMode == .renforce { guard masterKey != nil else { throw IngestionError.unreadable } }
 
         let sizeBytes: Int64
         do {
@@ -86,12 +95,20 @@ public struct VaultService: Sendable {
 
         let tmpURL = vaultRoot.appendingPathComponent("tmp/\(UUID().uuidString).part")
         try fileSystem.createDirectory(at: tmpURL.deletingLastPathComponent())
-        try fileSystem.copyItem(at: sourceURL, to: tmpURL)
 
-        let verifyHash = try VaultHashing.sha256(ofFileAt: tmpURL, fileSystem: fileSystem)
-        guard verifyHash == hash else {
-            try? fileSystem.removeItem(at: tmpURL)
-            throw IngestionError.hashMismatch
+        if encryptionMode == .renforce {
+            let plaintext = try fileSystem.read(at: sourceURL)
+            let verifyHash = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
+            guard verifyHash == hash else { throw IngestionError.hashMismatch }
+            let ciphertext = try BlobEncryption.encrypt(plaintext, masterKey: masterKey!, blobHash: hash)
+            try fileSystem.write(ciphertext, to: tmpURL)
+        } else {
+            try fileSystem.copyItem(at: sourceURL, to: tmpURL)
+            let verifyHash = try VaultHashing.sha256(ofFileAt: tmpURL, fileSystem: fileSystem)
+            guard verifyHash == hash else {
+                try? fileSystem.removeItem(at: tmpURL)
+                throw IngestionError.hashMismatch
+            }
         }
 
         try fileSystem.syncFile(at: tmpURL)
@@ -109,6 +126,34 @@ public struct VaultService: Sendable {
         return BlobWriteResult(hash: hash, sizeBytes: sizeBytes, blobURL: blobURL, metadataURL: metadataURL, isNewBlob: true)
     }
 
+    /// Lit le contenu en clair d'un blob, quel que soit son mode de chiffrement (§5.11).
+    public func readBlob(hash: String, encryptionMode: EncryptionMode = .standard, masterKey: Data? = nil) throws -> Data {
+        let (blobURL, _) = paths(forHash: hash)
+        guard fileSystem.fileExists(at: blobURL) else { throw IngestionError.unreadable }
+        let onDisk = try fileSystem.read(at: blobURL)
+        guard encryptionMode == .renforce else { return onDisk }
+        guard let masterKey else { throw IngestionError.unreadable }
+        return try BlobEncryption.decrypt(onDisk, masterKey: masterKey, blobHash: hash)
+    }
+
+    /// Déchiffre un blob Renforcé vers un fichier temporaire de session (§5.11 : « déchiffrement
+    /// vers temporaire de session », jamais un déchiffrement permanent sur disque). Pour un blob
+    /// Standard, retourne directement son chemin réel — aucune copie inutile. L'appelant est
+    /// responsable du cycle de vie du fichier ; `clearTemporaryFiles()` le balaie au redémarrage.
+    public func materializedFileURL(
+        hash: String, encryptionMode: EncryptionMode = .standard, masterKey: Data? = nil, suggestedExtension: String? = nil
+    ) throws -> URL {
+        let (blobURL, _) = paths(forHash: hash)
+        guard encryptionMode == .renforce else { return blobURL }
+
+        let plaintext = try readBlob(hash: hash, encryptionMode: encryptionMode, masterKey: masterKey)
+        let suffix = suggestedExtension.map { ".\($0)" } ?? ""
+        let tmpURL = vaultRoot.appendingPathComponent("tmp/\(UUID().uuidString)\(suffix)")
+        try fileSystem.createDirectory(at: tmpURL.deletingLastPathComponent())
+        try fileSystem.write(plaintext, to: tmpURL)
+        return tmpURL
+    }
+
     // MARK: - Intégrité (EF-27)
 
     public enum BlobVerificationStatus: String, Sendable, Equatable {
@@ -118,9 +163,19 @@ public struct VaultService: Sendable {
     /// Recalcule le hash d'un blob et le compare à son nom (§4.3) : la vérité d'intégrité vient
     /// du contenu, jamais de la base — un blob « corrupt » n'est jamais supprimé ici (EF-27), la
     /// décision de suppression reste hors de ce module.
-    public func verifyBlob(hash: String) -> BlobVerificationStatus {
+    ///
+    /// Mode Renforcé : le fichier sur disque est un chiffré, dont le hash ne correspond à rien —
+    /// l'intégrité y est portée par le tag d'authentification GCM (§5.11) : un blob altéré échoue
+    /// au déchiffrement, ce test remplace donc la comparaison de hash dans ce mode.
+    public func verifyBlob(hash: String, encryptionMode: EncryptionMode = .standard, masterKey: Data? = nil) -> BlobVerificationStatus {
         let (blobURL, _) = paths(forHash: hash)
         guard fileSystem.fileExists(at: blobURL) else { return .missing }
+
+        if encryptionMode == .renforce {
+            guard let masterKey, let onDisk = try? fileSystem.read(at: blobURL) else { return .missing }
+            return (try? BlobEncryption.decrypt(onDisk, masterKey: masterKey, blobHash: hash)) != nil ? .ok : .corrupt
+        }
+
         guard let actualHash = try? VaultHashing.sha256(ofFileAt: blobURL, fileSystem: fileSystem) else { return .missing }
         return actualHash == hash ? .ok : .corrupt
     }
@@ -167,12 +222,18 @@ public struct VaultService: Sendable {
     }
 
     /// Copie le blob vers une destination hors coffre, en lecture seule sur l'original (§5.10,
-    /// EF-24/EF-25). Le blob source n'est jamais déplacé ni modifié.
-    public func exportBlob(hash: String, to destinationURL: URL) throws {
-        let (blobURL, _) = paths(forHash: hash)
-        guard fileSystem.fileExists(at: blobURL) else { throw IngestionError.unreadable }
+    /// EF-24/EF-25). Le blob source n'est jamais déplacé ni modifié. Un blob Renforcé est déchiffré
+    /// au vol : l'export produit toujours un fichier en clair, exploitable hors du coffre.
+    public func exportBlob(hash: String, to destinationURL: URL, encryptionMode: EncryptionMode = .standard, masterKey: Data? = nil) throws {
         try fileSystem.createDirectory(at: destinationURL.deletingLastPathComponent())
-        try fileSystem.copyItem(at: blobURL, to: destinationURL)
+        guard encryptionMode == .renforce else {
+            let (blobURL, _) = paths(forHash: hash)
+            guard fileSystem.fileExists(at: blobURL) else { throw IngestionError.unreadable }
+            try fileSystem.copyItem(at: blobURL, to: destinationURL)
+            return
+        }
+        let plaintext = try readBlob(hash: hash, encryptionMode: encryptionMode, masterKey: masterKey)
+        try fileSystem.write(plaintext, to: destinationURL)
     }
 
     /// Résout les collisions de noms par suffixe `" (2)"`, `" (3)"`... (§5.10). Crée le dossier de
