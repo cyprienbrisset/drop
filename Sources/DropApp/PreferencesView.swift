@@ -14,6 +14,17 @@ struct PreferencesView: View {
     @State private var documentCount = 0
     @State private var remindersEnabled = false
 
+    private enum ConditionKind: String, CaseIterable, Identifiable {
+        case issuerEquals = "Émetteur est"
+        case docTypeEquals = "Type est"
+        case amountGreaterThan = "Montant supérieur à"
+        case keywordContains = "Mot-clé contient"
+        var id: String { rawValue }
+    }
+    @State private var newRuleConditionKind: ConditionKind = .issuerEquals
+    @State private var newRuleConditionValue = ""
+    @State private var newRuleActionTag = ""
+
     var body: some View {
         Form {
             Section("Emplacement du coffre") {
@@ -38,6 +49,46 @@ struct PreferencesView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Automatisation") {
+                Text("Type Hazel : « si… alors ajoute le tag… » — appliqué automatiquement après chaque analyse, jamais avant.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(environment.automationRuleList) { rule in
+                    HStack {
+                        Toggle(isOn: Binding(
+                            get: { rule.isEnabled },
+                            set: { environment.setAutomationRule(rule, isEnabled: $0) }
+                        )) {
+                            Text(Self.describe(rule))
+                        }
+                        Button {
+                            environment.removeAutomationRule(rule)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Retirer la règle \(rule.name)")
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Condition", selection: $newRuleConditionKind) {
+                        ForEach(ConditionKind.allCases) { kind in
+                            Text(kind.rawValue).tag(kind)
+                        }
+                    }
+                    TextField(conditionValuePlaceholder, text: $newRuleConditionValue)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Alors ajoute le tag…", text: $newRuleActionTag)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Ajouter la règle", action: addRule)
+                        .disabled(newRuleConditionValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || newRuleActionTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(.top, 4)
+            }
+
             Section("Budget disque") {
                 LabeledContent("Taille du coffre", value: Self.formatBytes(budget.vaultSizeBytes))
                 LabeledContent("Économie de déduplication", value: Self.formatBytes(budget.dedupSavingsBytes))
@@ -51,7 +102,48 @@ struct PreferencesView: View {
             budget = await environment.computeBudget()
             documentCount = (try? await environment.activeDocumentCount()) ?? 0
             remindersEnabled = await environment.remindersEnabled()
+            await environment.loadAutomationRules()
         }
+    }
+
+    private var conditionValuePlaceholder: String {
+        switch newRuleConditionKind {
+        case .issuerEquals: return "ex. EDF"
+        case .docTypeEquals: return "ex. facture"
+        case .amountGreaterThan: return "ex. 100"
+        case .keywordContains: return "ex. électricité"
+        }
+    }
+
+    private func addRule() {
+        let value = newRuleConditionValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tag = newRuleActionTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !tag.isEmpty else { return }
+
+        let condition: AutomationRules.Condition
+        switch newRuleConditionKind {
+        case .issuerEquals: condition = .issuerEquals(value)
+        case .docTypeEquals: condition = .docTypeEquals(value)
+        case .amountGreaterThan:
+            guard let threshold = Double(value.replacingOccurrences(of: ",", with: ".")) else { return }
+            condition = .amountGreaterThan(threshold)
+        case .keywordContains: condition = .keywordContains(value)
+        }
+
+        environment.addAutomationRule(name: "\(newRuleConditionKind.rawValue) « \(value) »", condition: condition, actionTag: tag)
+        newRuleConditionValue = ""
+        newRuleActionTag = ""
+    }
+
+    private static func describe(_ rule: AutomationRules.Rule) -> String {
+        let conditionText: String
+        switch rule.condition {
+        case .issuerEquals(let value): conditionText = "émetteur = « \(value) »"
+        case .docTypeEquals(let value): conditionText = "type = « \(value) »"
+        case .amountGreaterThan(let value): conditionText = "montant > \(value.formatted())"
+        case .keywordContains(let value): conditionText = "mot-clé contient « \(value) »"
+        }
+        return "Si \(conditionText) → tag « \(rule.actionTag) »"
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

@@ -47,6 +47,7 @@ final class AppEnvironment {
     private let verifyVaultIntegrity: VerifyVaultIntegrity
     private let importVaultUseCase: ImportVault
     private let scheduleReminders: ScheduleReminders
+    private let automationRules: AutomationRules
     private let queryParser = QueryParser()
 
     /// Cadence de la boucle d'entretien (purge de la corbeille échue, EF-23) — la vérification
@@ -59,6 +60,7 @@ final class AppEnvironment {
     var searchResults: [DocumentSearchResult] = []
     var isSearching = false
     var trashedDocuments: [ManageTrash.TrashedDocument] = []
+    var automationRuleList: [AutomationRules.Rule] = []
 
     /// Emplacement par défaut (§EF-20) : Application Support, jamais iCloud Drive ni un dossier
     /// synchronisé — le choix d'un autre emplacement avec migration vérifiée reste à câbler.
@@ -97,7 +99,11 @@ final class AppEnvironment {
         self.verifyVaultIntegrity = VerifyVaultIntegrity(database: indexDatabase, vault: vault)
         self.importVaultUseCase = ImportVault(vault: vault, database: indexDatabase)
         self.scheduleReminders = ScheduleReminders(database: indexDatabase, scheduler: SystemNotificationScheduler())
-        self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument, scheduleReminders: scheduleReminders)
+        self.automationRules = AutomationRules(database: indexDatabase, manageTags: manageTags)
+        self.jobWorker = JobWorker(
+            jobQueue: jobQueue, analyzeDocument: analyzeDocument, scheduleReminders: scheduleReminders,
+            automationRules: automationRules
+        )
         Task { await self.jobWorker.start() }
         Task { await self.runMaintenanceLoop() }
     }
@@ -528,6 +534,31 @@ final class AppEnvironment {
         Task {
             try? await manageTrash.restore(documentID: document.id)
         }
+    }
+
+    // MARK: - Règles d'automatisation (§5, backlog V3)
+
+    func loadAutomationRules() async {
+        automationRuleList = (try? await automationRules.listRules()) ?? []
+    }
+
+    func addAutomationRule(name: String, condition: AutomationRules.Condition, actionTag: String) {
+        Task {
+            _ = try? await automationRules.addRule(name: name, condition: condition, actionTag: actionTag)
+            await loadAutomationRules()
+        }
+    }
+
+    func removeAutomationRule(_ rule: AutomationRules.Rule) {
+        automationRuleList.removeAll { $0.id == rule.id }
+        Task { try? await automationRules.removeRule(id: rule.id) }
+    }
+
+    func setAutomationRule(_ rule: AutomationRules.Rule, isEnabled: Bool) {
+        if let index = automationRuleList.firstIndex(where: { $0.id == rule.id }) {
+            automationRuleList[index].isEnabled = isEnabled
+        }
+        Task { try? await automationRules.setEnabled(id: rule.id, isEnabled: isEnabled) }
     }
 
     // MARK: - Budget disque (EF-26)
