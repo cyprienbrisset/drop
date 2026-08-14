@@ -38,9 +38,18 @@ let package = Package(
         .target(name: "DropExtraction", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropEntities", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropIntelligence", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        // Amalgamation vendorisée de `sqlite-vec` (§4.1, dépendance tierce autorisée). `SQLITE_CORE`
+        // : compilé pour un lien statique direct contre le SQLite système (comme `GRDBSQLite`),
+        // pas comme extension chargée dynamiquement — les symboles `sqlite3_*` sont résolus au
+        // link, sans passer par la table `sqlite3_api_routines`.
+        .target(
+            name: "CSQLiteVec",
+            cSettings: [.define("SQLITE_CORE")],
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
         .target(
             name: "DropEmbeddings",
-            dependencies: ["DropCore", .product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: ["DropCore", "CSQLiteVec", .product(name: "GRDB", package: "GRDB.swift")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(name: "DropSearch", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),

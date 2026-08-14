@@ -1,16 +1,33 @@
+import CSQLiteVec
 import GRDB
 
+public enum VectorsDatabaseError: Error, Sendable {
+    case extensionRegistrationFailed(String)
+}
+
 /// Point d'accès à `vectors.db` (§4.5), base séparée et non chiffrée (§4.3) : régénérer les
-/// vecteurs ne doit jamais toucher l'index métier. La table `chunks` est créée ici ; la table
-/// virtuelle `vec_chunks` (extension `sqlite-vec`) est ajoutée en Phase 6 (DRO-43) lors de
-/// l'intégration effective du moteur vectoriel.
+/// vecteurs ne doit jamais toucher l'index métier. `sqlite-vec` (`vec0`) est enregistré sur
+/// chaque connexion via `sqlite3_vec_init`, appelé statiquement (§4.1 — pas d'extension chargée
+/// dynamiquement, le module est lié directement dans le binaire).
 public struct VectorsDatabase: Sendable {
     public let pool: DatabasePool
 
     public init(path: String) throws {
-        let configuration = Configuration()
+        var configuration = Configuration()
+        configuration.prepareDatabase { db in
+            try Self.registerSQLiteVec(on: db)
+        }
         pool = try DatabasePool(path: path, configuration: configuration)
         try Self.migrator.migrate(pool)
+    }
+
+    private static func registerSQLiteVec(on db: Database) throws {
+        var errorMessage: UnsafeMutablePointer<CChar>?
+        let code = sqlite3_vec_init(db.sqliteConnection, &errorMessage, nil)
+        guard code == SQLITE_OK else {
+            let message = errorMessage.map { String(cString: $0) } ?? "code \(code)"
+            throw VectorsDatabaseError.extensionRegistrationFailed(message)
+        }
     }
 
     static var migrator: DatabaseMigrator {
@@ -31,6 +48,14 @@ public struct VectorsDatabase: Sendable {
                 """)
             try db.execute(sql: "CREATE INDEX idx_chunks_doc ON chunks(document_id)")
             try db.execute(sql: "CREATE INDEX idx_chunks_model ON chunks(model_version)")
+        }
+        migrator.registerMigration("v2_create_vec_chunks") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE vec_chunks USING vec0(
+                  chunk_id INTEGER PRIMARY KEY,
+                  embedding int8[512]
+                );
+                """)
         }
         return migrator
     }
