@@ -6,16 +6,26 @@ import SwiftUI
 /// (EX-01). Trois surfaces seulement : Drop Zone, Search, Préférences (EX-02).
 @main
 struct DropApp: App {
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
         MenuBarExtra("Drop", systemImage: "tray.and.arrow.down") {
-            Text("Drop Zone — à construire (DRO-26)")
+            Text("Drop Zone — à construire (EF-01..EF-13)")
             Divider()
+            Button("Rechercher…") {
+                openWindow(id: "search")
+            }
             SettingsLink {
                 Text("Préférences…")
             }
             Button("Quitter Drop") {
                 NSApplication.shared.terminate(nil)
             }
+        }
+
+        // Résultats vides en attendant le bootstrap applicatif (cf. note de portée de SearchView).
+        WindowGroup(id: "search") {
+            SearchView(results: [])
         }
 
         Settings {
