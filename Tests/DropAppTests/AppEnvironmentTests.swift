@@ -228,3 +228,36 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     }
     #expect(documentCount == 100) // le 101e (celui du test) n'a jamais été créé.
 }
+
+/// Preuve de bout en bout que les tags (EF-66) sont réellement persistés et répercutés dans
+/// `searchResults` — le filtre `#tag` du `QueryParser` existait déjà, mais rien ne permettait
+/// jamais de créer un tag avant cette façade.
+@Test @MainActor func addingAndRemovingATagUpdatesSearchResultsAndPersists() async throws {
+    let environment = try makeEnvironment()
+    let source = try writeSourceFile(named: "doc-tags.txt", contents: "Contenu quelconque pour le test des tags")
+
+    environment.handleDrop(of: [source])
+    await waitUntilSearchable(environment, query: "quelconque")
+
+    guard let result = environment.searchResults.first else {
+        Issue.record("le document ingéré devrait être retrouvable")
+        return
+    }
+    #expect(result.tags.isEmpty)
+
+    environment.addTag(result, name: "Maison")
+    let afterAdd = environment.searchResults.first { $0.id == result.id }
+    #expect(afterAdd?.tags == ["maison"]) // reflet local immédiat, normalisé en minuscules.
+
+    try await Task.sleep(for: .milliseconds(500)) // laisse la tâche détachée écrire en base.
+    await waitUntilSearchable(environment, query: "quelconque")
+    #expect(environment.searchResults.first { $0.id == result.id }?.tags == ["maison"])
+
+    environment.removeTag(result, name: "maison")
+    let afterRemove = environment.searchResults.first { $0.id == result.id }
+    #expect(afterRemove?.tags.isEmpty == true)
+
+    try await Task.sleep(for: .milliseconds(500))
+    await waitUntilSearchable(environment, query: "quelconque")
+    #expect(environment.searchResults.first { $0.id == result.id }?.tags.isEmpty == true)
+}

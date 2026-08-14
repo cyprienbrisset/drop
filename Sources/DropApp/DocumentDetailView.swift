@@ -15,12 +15,15 @@ struct DocumentDetailView: View {
     var onCorrectType: (String) -> Void = { _ in }
     var onCorrectIssuer: (String) -> Void = { _ in }
     var onCorrectEffectiveDate: (Date) -> Void = { _ in }
+    var onAddTag: (String) -> Void = { _ in }
+    var onRemoveTag: (String) -> Void = { _ in }
 
     @State private var quickLookURL: URL?
     @State private var isCorrecting = false
     @State private var editedTypeRawValue: String = DocumentType.autre.rawValue
     @State private var editedIssuer: String = ""
     @State private var editedDate: Date = .now
+    @State private var newTagText: String = ""
 
     var body: some View {
         ScrollView {
@@ -28,6 +31,8 @@ struct DocumentDetailView: View {
                 header
                 Divider()
                 fields
+                Divider()
+                tagEditor
                 if isCorrecting {
                     Divider()
                     correctionForm
@@ -66,9 +71,6 @@ struct DocumentDetailView: View {
             if !result.keywords.isEmpty {
                 field("Mots-clés", result.keywords.joined(separator: ", "))
             }
-            if !result.tags.isEmpty {
-                field("Tags", result.tags.joined(separator: ", "))
-            }
             field("Chemin d'origine", result.originalPath ?? "non conservé")
             field("Taille", DocumentSearchResult.formattedSize(result.sizeBytes))
             field("Empreinte", result.shortHash)
@@ -86,6 +88,54 @@ struct DocumentDetailView: View {
         }
         // EX-09/ENF-40 : « Type, facture » plutôt que deux éléments VoiceOver disjoints.
         .accessibilityElement(children: .combine)
+    }
+
+    /// EF-66 : tags manuels, libres — jamais un vocabulaire imposé, contrairement au type.
+    private var tagEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tags")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if !result.tags.isEmpty {
+                // `LazyVGrid` adaptatif plutôt qu'un `HStack` : les puces passent à la ligne
+                // suivante d'elles-mêmes quand la largeur de la fenêtre ne suffit plus.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(result.tags, id: \.self) { tag in
+                        HStack(spacing: 4) {
+                            Text(tag)
+                            Button {
+                                onRemoveTag(tag)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Retirer le tag \(tag)")
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: .capsule)
+                        .fixedSize()
+                    }
+                }
+            }
+
+            HStack {
+                TextField("Ajouter un tag…", text: $newTagText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addTypedTag)
+                Button("Ajouter", action: addTypedTag)
+                    .disabled(newTagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func addTypedTag() {
+        let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onAddTag(trimmed)
+        newTagText = ""
     }
 
     /// EF-48 : une correction verrouille définitivement le champ contre toute réécriture

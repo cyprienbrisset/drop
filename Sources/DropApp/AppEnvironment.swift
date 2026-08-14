@@ -43,6 +43,7 @@ final class AppEnvironment {
     private let jobQueue: JobQueue
     private let jobWorker: JobWorker
     private let correctDocument: CorrectDocument
+    private let manageTags: ManageTags
     private let verifyVaultIntegrity: VerifyVaultIntegrity
     private let queryParser = QueryParser()
 
@@ -91,6 +92,7 @@ final class AppEnvironment {
         self.exportDocuments = ExportDocuments(vault: vault, database: indexDatabase)
         self.jobQueue = JobQueue(database: indexDatabase)
         self.correctDocument = CorrectDocument(database: indexDatabase)
+        self.manageTags = ManageTags(database: indexDatabase)
         self.verifyVaultIntegrity = VerifyVaultIntegrity(database: indexDatabase, vault: vault)
         self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
         Task { await self.jobWorker.start() }
@@ -235,6 +237,7 @@ final class AppEnvironment {
         let blobHash: String
         let keywords: [String]
         let amount: Double?
+        let tags: [String]
     }
 
     private func hydrate(_ results: [SearchResult]) async throws -> [DocumentSearchResult] {
@@ -281,13 +284,29 @@ final class AppEnvironment {
                 if amountByID[documentID] == nil { amountByID[documentID] = row["value_num"] }
             }
 
+            let tagRows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT document_tags.document_id AS document_id, tags.name AS name
+                FROM document_tags JOIN tags ON tags.id = document_tags.tag_id
+                WHERE document_tags.document_id IN (\(placeholders))
+                ORDER BY tags.name
+                """,
+                arguments: StatementArguments(documentIDs)
+            )
+            var tagsByID: [String: [String]] = [:]
+            for row in tagRows {
+                tagsByID[row["document_id"], default: []].append(row["name"])
+            }
+
             return fetched.map { row in
                 let documentID: String = row["id"]
                 return DocumentRow(
                     id: documentID, displayName: row["display_name"], originalFilename: row["original_filename"],
                     docType: row["doc_type"], issuer: row["issuer"], effectiveDate: row["effective_date"],
                     summary: row["summary"], originalPath: row["original_path"], sizeBytes: row["size_bytes"],
-                    blobHash: row["blob_hash"], keywords: keywordsByID[documentID] ?? [], amount: amountByID[documentID]
+                    blobHash: row["blob_hash"], keywords: keywordsByID[documentID] ?? [], amount: amountByID[documentID],
+                    tags: tagsByID[documentID] ?? []
                 )
             }
         }
@@ -306,7 +325,7 @@ final class AppEnvironment {
                 amount: row.amount,
                 keywords: row.keywords,
                 summary: row.summary,
-                tags: [],
+                tags: row.tags,
                 originalPath: row.originalPath,
                 sizeBytes: row.sizeBytes,
                 hash: row.blobHash,
@@ -400,6 +419,22 @@ final class AppEnvironment {
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter
     }()
+
+    // MARK: - Tags (EF-66)
+
+    func addTag(_ result: DocumentSearchResult, name: String) {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return }
+        Task { try? await manageTags.addTag(documentID: result.id, name: normalized) }
+        applyLocalCorrection(documentID: result.id) { current in
+            if !current.tags.contains(normalized) { current.tags.append(normalized); current.tags.sort() }
+        }
+    }
+
+    func removeTag(_ result: DocumentSearchResult, name: String) {
+        Task { try? await manageTags.removeTag(documentID: result.id, name: name) }
+        applyLocalCorrection(documentID: result.id) { $0.tags.removeAll { $0 == name } }
+    }
 
     // MARK: - Corbeille (EF-23, §5.9)
 

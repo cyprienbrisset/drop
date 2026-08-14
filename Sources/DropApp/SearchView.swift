@@ -110,6 +110,18 @@ struct SearchView: View {
                 onCorrectEffectiveDate: { newDate in
                     environment.correctEffectiveDate(result, to: newDate)
                     detailResult?.effectiveDate = newDate
+                },
+                onAddTag: { newTag in
+                    environment.addTag(result, name: newTag)
+                    let normalized = newTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    if !normalized.isEmpty, detailResult?.tags.contains(normalized) == false {
+                        detailResult?.tags.append(normalized)
+                        detailResult?.tags.sort()
+                    }
+                },
+                onRemoveTag: { tag in
+                    environment.removeTag(result, name: tag)
+                    detailResult?.tags.removeAll { $0 == tag }
                 }
             )
         }

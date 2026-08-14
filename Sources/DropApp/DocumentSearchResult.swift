@@ -15,7 +15,7 @@ struct DocumentSearchResult: Identifiable, Sendable, Equatable {
     let amount: Double?
     let keywords: [String]
     let summary: String?
-    let tags: [String]
+    var tags: [String]
     let originalPath: String?
     let sizeBytes: Int64
     let hash: String
