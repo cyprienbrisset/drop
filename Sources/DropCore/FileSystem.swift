@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Abstraction de tout accès au système de fichiers, pour permettre l'injection de pannes en test (§8.4 du CDC).
@@ -63,10 +64,18 @@ public struct LiveFileSystem: FileSystem {
         try handle.synchronize()
     }
 
+    /// `FileHandle(forReadingFrom:)` refuse d'ouvrir un répertoire (NSCocoaErrorDomain Code=4,
+    /// même quand celui-ci existe) — on descend au `open()`/`fsync()` POSIX, seul moyen fiable
+    /// de synchroniser un répertoire après un `rename()` (§5.1 étape 7).
     public func syncDirectory(at url: URL) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        try handle.synchronize()
+        let descriptor = open(url.path, O_RDONLY)
+        guard descriptor >= 0 else {
+            throw DropError(code: "FS-SYNC-DIR", message: "impossible d'ouvrir \(url.path) (errno \(errno))")
+        }
+        defer { close(descriptor) }
+        guard fsync(descriptor) == 0 else {
+            throw DropError(code: "FS-SYNC-DIR", message: "fsync a échoué pour \(url.path) (errno \(errno))")
+        }
     }
 
     public func contentsOfDirectory(at url: URL) throws -> [URL] {

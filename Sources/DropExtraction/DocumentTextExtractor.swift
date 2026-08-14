@@ -21,8 +21,12 @@ public struct DocumentTextExtractor: Sendable {
         self.maxAutoOCRPages = maxAutoOCRPages
     }
 
-    public func extract(fileAt url: URL) throws -> ExtractedDocument {
-        switch url.pathExtension.lowercased() {
+    /// `extensionHint` permet de préciser le format quand l'URL elle-même n'a pas d'extension
+    /// exploitable — c'est le cas des blobs du coffre, nommés par leur hash (§4.3) : l'appelant
+    /// (Phase 4, `AnalyzeDocument`) transmet alors l'extension d'origine du document.
+    public func extract(fileAt url: URL, extensionHint: String? = nil) throws -> ExtractedDocument {
+        let fileExtension = (extensionHint ?? url.pathExtension).lowercased()
+        switch fileExtension {
         case "pdf":
             return try extractPDFWithOCR(fileAt: url)
         case "txt", "md", "csv":
