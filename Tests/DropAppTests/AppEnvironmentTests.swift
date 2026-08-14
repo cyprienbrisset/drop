@@ -148,3 +148,37 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     #expect(afterFreshSearch?.docType == "contrat")
     #expect(afterFreshSearch?.issuer == "Émetteur corrigé")
 }
+
+/// Preuve réelle que la boucle d'entretien (EF-23/EF-27), jusque-là jamais déclenchée nulle part,
+/// tourne bien quand on l'invoque — purge la corbeille échue et exécute la vérification
+/// d'intégrité au moins une fois, sans la répéter avant le délai hebdomadaire.
+@Test @MainActor func maintenanceRunsIntegrityCheckOnceThenSkipsUntilDue() async throws {
+    let environment = try makeEnvironment()
+    let source = try writeSourceFile(named: "entretien.txt", contents: "Contenu pour le test d'entretien")
+
+    environment.handleDrop(of: [source])
+    await waitUntilSearchable(environment, query: "entretien")
+
+    let blobHash: String? = try await environment.indexDatabase.pool.read { db in
+        try String.fetchOne(db, sql: "SELECT blob_hash FROM documents LIMIT 1")
+    }
+    guard let blobHash else {
+        Issue.record("le document ingéré devrait avoir un blob"); return
+    }
+
+    func lastVerifiedAt() async throws -> String? {
+        try await environment.indexDatabase.pool.read { db in
+            try String.fetchOne(db, sql: "SELECT last_verified_at FROM blobs WHERE hash = ?", arguments: [blobHash])
+        }
+    }
+
+    #expect(try await lastVerifiedAt() == nil) // jamais vérifié avant la première passe.
+
+    await environment.runMaintenanceOnce()
+    let firstCheckTimestamp = try await lastVerifiedAt()
+    #expect(firstCheckTimestamp != nil) // la vérification d'intégrité a bien tourné.
+
+    await environment.runMaintenanceOnce()
+    let secondCheckTimestamp = try await lastVerifiedAt()
+    #expect(secondCheckTimestamp == firstCheckTimestamp) // pas re-vérifié avant le délai hebdomadaire.
+}

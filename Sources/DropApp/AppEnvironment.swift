@@ -40,7 +40,14 @@ final class AppEnvironment {
     private let jobQueue: JobQueue
     private let jobWorker: JobWorker
     private let correctDocument: CorrectDocument
+    private let verifyVaultIntegrity: VerifyVaultIntegrity
     private let queryParser = QueryParser()
+
+    /// Cadence de la boucle d'entretien (purge de la corbeille échue, EF-23) — la vérification
+    /// d'intégrité (EF-27) est hebdomadaire et gérée séparément via `lastIntegrityCheckKey`.
+    private static let maintenanceIntervalSeconds: Double = 86400
+    private static let integrityCheckIntervalSeconds: TimeInterval = 7 * 86400
+    private var lastIntegrityCheckKey: String { "lastIntegrityCheckAt-\(vaultRoot.path)" }
 
     var dropZoneState: DropZoneState = .idle
     var searchResults: [DocumentSearchResult] = []
@@ -81,8 +88,41 @@ final class AppEnvironment {
         self.exportDocuments = ExportDocuments(vault: vault, database: indexDatabase)
         self.jobQueue = JobQueue(database: indexDatabase)
         self.correctDocument = CorrectDocument(database: indexDatabase)
+        self.verifyVaultIntegrity = VerifyVaultIntegrity(database: indexDatabase, vault: vault)
         self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
         Task { await self.jobWorker.start() }
+        Task { await self.runMaintenanceLoop() }
+    }
+
+    // MARK: - Entretien (purge corbeille EF-23, intégrité EF-27)
+
+    /// Boucle continue tant que l'app tourne : purge la corbeille échue toutes les 24 h, et
+    /// vérifie l'intégrité par échantillonnage une fois par semaine (jamais plus souvent — le
+    /// coût de ré-hachage grandit avec la taille du coffre, §5.9).
+    private func runMaintenanceLoop() async {
+        while !Task.isCancelled {
+            await runMaintenanceOnce()
+            try? await Task.sleep(for: .seconds(Self.maintenanceIntervalSeconds))
+        }
+    }
+
+    /// Une passe d'entretien, exposée séparément de la boucle pour rester testable sans attendre
+    /// un cycle de 24 h.
+    func runMaintenanceOnce() async {
+        _ = try? await manageTrash.purgeExpired()
+
+        let defaults = UserDefaults.standard
+        let key = lastIntegrityCheckKey
+        let lastCheck = defaults.object(forKey: key) as? Date
+        let dueForCheck = lastCheck.map { Date().timeIntervalSince($0) >= Self.integrityCheckIntervalSeconds } ?? true
+        guard dueForCheck else { return }
+
+        // Ne marque « vérifié » que si un échantillon a réellement été examiné (§5.9) : au tout
+        // premier lancement, le coffre est vide et `sampledCount == 0` — marquer quand même la
+        // date déclarerait à tort le coffre « vérifié » et repousserait le premier vrai contrôle
+        // d'une semaine complète après le dépôt des premiers documents.
+        guard let report = try? await verifyVaultIntegrity.run(), report.sampledCount > 0 else { return }
+        defaults.set(Date(), forKey: key)
     }
 
     // MARK: - Ingestion (Drop Zone, EF-01 à EF-13)
