@@ -13,4 +13,13 @@ public struct LicensePayload: Sendable, Codable {
     public let issuedAt: String
     public let buyerHash: String
     public let seats: Int
+
+    public init(v: Int, sku: String, orderID: String, issuedAt: String, buyerHash: String, seats: Int) {
+        self.v = v
+        self.sku = sku
+        self.orderID = orderID
+        self.issuedAt = issuedAt
+        self.buyerHash = buyerHash
+        self.seats = seats
+    }
 }
