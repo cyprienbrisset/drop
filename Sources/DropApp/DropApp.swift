@@ -15,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var searchWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var trashWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
+    private var globalHotkeyMonitor: Any?
+
+    /// Raccourci global promis dès l'onboarding (EX-06) : ⌥ Espace, cohérent avec ce que
+    /// `OnboardingView` affiche à l'utilisateur — jamais un texte aspirationnel sans réalité.
+    private static let globalShortcutDescription = "⌥ Espace"
+    private static let hasCompletedOnboardingKey = "hasCompletedOnboarding"
 
     override init() {
         // `try!` assumé : si le coffre ne peut pas être créé (permissions, disque plein), l'app
@@ -30,6 +37,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         setUpStatusItem()
         setUpPopover()
+        registerGlobalHotkey()
+
+        if !UserDefaults.standard.bool(forKey: Self.hasCompletedOnboardingKey) {
+            openOnboardingWindow()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let globalHotkeyMonitor {
+            NSEvent.removeMonitor(globalHotkeyMonitor)
+        }
+    }
+
+    /// ⌥ Espace ouvre la recherche depuis n'importe quelle application (§EX-02). Un moniteur
+    /// global standard (pas un `CGEventTap`) : aucune permission d'accessibilité requise, l'app
+    /// n'étant de toute façon jamais sandboxée (§4.1).
+    private func registerGlobalHotkey() {
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.option], event.keyCode == 49 else { return }
+            Task { @MainActor in self?.openSearchWindow() }
+        }
     }
 
     private func setUpStatusItem() {
@@ -117,6 +145,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         trashWindow?.center()
         trashWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func openOnboardingWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        if onboardingWindow == nil {
+            let hosting = NSHostingController(
+                rootView: OnboardingView(
+                    vaultLocation: environment.vaultRoot, globalShortcut: Self.globalShortcutDescription,
+                    onChooseVaultLocation: { [weak self] in self?.showVaultLocationChangeNotYetAvailableAlert() },
+                    onTryDemoDrop: { [weak self] in self?.dropDemoFile() },
+                    onFinish: { [weak self] in self?.finishOnboarding() }
+                )
+            )
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "Bienvenue dans Drop"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            onboardingWindow = window
+        }
+        onboardingWindow?.center()
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: Self.hasCompletedOnboardingKey)
+        onboardingWindow?.close()
+    }
+
+    /// EF-20 : changer d'emplacement avec migration vérifiée n'est pas encore câblé (cf.
+    /// `PreferencesView`) — un bouton qui ne ferait rien silencieusement serait pire qu'une
+    /// alerte honnête sur cette limite actuelle.
+    private func showVaultLocationChangeNotYetAvailableAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Pas encore disponible"
+        alert.informativeText = "Le changement d'emplacement du coffre avec migration arrive dans une prochaine version. Le coffre reste pour l'instant à l'emplacement affiché."
+        alert.runModal()
+    }
+
+    /// Dépôt de démonstration réel (EX-06) : un vrai fichier, ingéré par le même chemin qu'un
+    /// glisser-déposer — pas une simulation qui ferait croire à une fonctionnalité factice.
+    private func dropDemoFile() {
+        let content = """
+        Bienvenue dans Drop.
+
+        Ceci est un document de démonstration. Déposez vos propres fichiers sur l'icône de la \
+        barre de menus pour les rendre immédiatement cherchables en langage naturel.
+        """
+        let demoURL = FileManager.default.temporaryDirectory.appendingPathComponent("Bienvenue dans Drop.txt")
+        try? content.write(to: demoURL, atomically: true, encoding: .utf8)
+        environment.handleDrop(of: [demoURL])
     }
 }
 
