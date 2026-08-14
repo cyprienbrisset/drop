@@ -5,16 +5,19 @@ import Foundation
 import GRDB
 
 /// Résultat de recherche final (§5.7) : score post-fusion RRF, après application des
-/// multiplicateurs bornés. L'ordre de tri est décroissant sur `score`.
+/// multiplicateurs bornés et du seuil de pertinence (EF-68). L'ordre de tri est décroissant sur
+/// `score`. `explanation` (EF-69) donne les raisons de la remontée, en langage clair.
 public struct SearchResult: Sendable, Equatable {
     public let documentID: String
     public let score: Double
+    public let explanation: [String]
 }
 
 /// Orchestrateur de la recherche (§5.6-5.7) : parse la requête, interroge les générateurs de
-/// candidats pertinents, fusionne par RRF puis applique les multiplicateurs de pertinence.
-/// S'arrête volontairement avant le seuil EF-68 (DRO-45) — ce moteur renvoie tous les résultats
-/// fusionnés, triés, sans filtrer sur un plancher de score.
+/// candidats pertinents, fusionne par RRF, applique les multiplicateurs de pertinence puis élague
+/// au seuil EF-68 (35 % du meilleur score, plancher absolu). L'affichage progressif (EF-68) et le
+/// non-réordonnancement sous le focus clavier restent la responsabilité de l'appelant UI
+/// (`DropApp/SearchView`, cf. sa note de portée) — ce moteur renvoie un instantané complet.
 public struct SearchEngine: Sendable {
     private let indexDatabase: DropIndexDatabase
     private let lexical: LexicalCandidateGenerator
@@ -68,12 +71,29 @@ public struct SearchEngine: Sendable {
         let documentIDs = Array(fused.keys)
         let signals = try await relevanceSignals(for: documentIDs, queryText: query.freeText)
 
-        let scored = fused.map { documentID, rrfScore -> SearchResult in
-            let multiplier = RelevanceMultipliers.multiplier(for: signals[documentID] ?? RelevanceSignals())
-            return SearchResult(documentID: documentID, score: rrfScore * multiplier)
+        let matchedGenerators: [String: Set<String>] = documentIDs.reduce(into: [:]) { result, documentID in
+            result[documentID] = Set(rankedLists.compactMap { generator, documents in
+                documents.contains { $0.documentID == documentID } ? generator : nil
+            })
         }
 
-        return scored.sorted { $0.score > $1.score }.prefix(limit).map { $0 }
+        var scores: [String: Double] = [:]
+        for (documentID, rrfScore) in fused {
+            let multiplier = RelevanceMultipliers.multiplier(for: signals[documentID] ?? RelevanceSignals())
+            scores[documentID] = rrfScore * multiplier
+        }
+
+        let thresholded = RelevanceThreshold.apply(to: scores)
+
+        let results = thresholded.map { documentID, score -> SearchResult in
+            let explanation = RelevanceExplanation.describe(
+                signals: signals[documentID] ?? RelevanceSignals(),
+                matchedGenerators: matchedGenerators[documentID] ?? []
+            )
+            return SearchResult(documentID: documentID, score: score, explanation: explanation)
+        }
+
+        return results.sorted { $0.score > $1.score }.prefix(limit).map { $0 }
     }
 
     /// Calcule les signaux §5.7 pour chaque document candidat en un minimum de requêtes.
