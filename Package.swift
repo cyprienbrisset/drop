@@ -18,17 +18,30 @@ let package = Package(
         .library(name: "DropFeatures", targets: ["DropFeatures"]),
         .executable(name: "DropApp", targets: ["DropApp"]),
     ],
+    dependencies: [
+        // Dépendance tierce autorisée (§4.1). SQLCipher sera substitué au SQLite système en
+        // Phase 8 (DRO-51) sans changement de DAO — GRDB reste la seule couche SQL du projet.
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
+    ],
     targets: [
         // Socle : aucune dépendance. Types, erreurs, journalisation, horloge injectable, FS abstrait.
         .target(name: "DropCore", swiftSettings: [.swiftLanguageMode(.v6)]),
 
         // Modules métier, dépendance unique sur DropCore. Strictement pairs entre eux (§4.2 règle 1).
         .target(name: "DropVault", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .target(name: "DropIndex", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
+            name: "DropIndex",
+            dependencies: ["DropCore", .product(name: "GRDB", package: "GRDB.swift")],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .target(name: "DropExtraction", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropEntities", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropIntelligence", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .target(name: "DropEmbeddings", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
+            name: "DropEmbeddings",
+            dependencies: ["DropCore", .product(name: "GRDB", package: "GRDB.swift")],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .target(name: "DropSearch", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropJobs", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropLicense", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
@@ -49,6 +62,8 @@ let package = Package(
         // Tests — cibles prioritaires de couverture (§8.1) : DropCore, DropSearch, DropLicense.
         .testTarget(name: "DropCoreTests", dependencies: ["DropCore"]),
         .testTarget(name: "DropVaultTests", dependencies: ["DropVault"]),
+        .testTarget(name: "DropIndexTests", dependencies: ["DropIndex"]),
+        .testTarget(name: "DropEmbeddingsTests", dependencies: ["DropEmbeddings"]),
         .testTarget(name: "DropSearchTests", dependencies: ["DropSearch"]),
         .testTarget(name: "DropLicenseTests", dependencies: ["DropLicense"]),
     ]
