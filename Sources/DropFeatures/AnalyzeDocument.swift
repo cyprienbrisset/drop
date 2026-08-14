@@ -2,17 +2,22 @@ import DropCore
 import DropEntities
 import DropExtraction
 import DropIndex
+import DropIntelligence
 import DropVault
 import Foundation
 import GRDB
 
-/// Cas d'usage : analyse déterministe d'un document déjà ingéré (§4.2 `RunAnalysis`, sous-ensemble
-/// couvrant l'extraction de texte et les entités déterministes — le modèle de langage arrive en
-/// Phase 5). Respecte l'ordre de subsidiarité (EF-41) : texte → OCR conditionnel → regex.
+/// Cas d'usage : analyse d'un document déjà ingéré (§4.2 `RunAnalysis`) — extraction de texte,
+/// entités déterministes (EF-41, texte → OCR conditionnel → regex), puis classification/résumé
+/// par le modèle de langage système quand disponible (§5.4, ADR-09 : le modèle ne décide jamais
+/// d'un type déjà classé de façon déterministe pour un champ verrouillé par l'utilisateur, et son
+/// émetteur suggéré ne sert que de repli si le dictionnaire déterministe n'a rien trouvé).
 ///
-/// Persiste `page_texts`, `entities`, met à jour `documents` (émetteur, date effective) et
-/// `fts_docs` (corps, émetteur) — un document reste cherchable dès l'ingestion (EF-40), enrichi
-/// ensuite par ce passage.
+/// Persiste `page_texts`, `entities`, met à jour `documents` (type, émetteur, date effective,
+/// résumé) et `fts_docs` (corps, émetteur, mots-clés) — un document reste cherchable dès
+/// l'ingestion (EF-40), enrichi ensuite par ce passage. Sans Apple Intelligence disponible
+/// (§5.4.4), l'analyse déterministe seule s'applique déjà et reste pleinement cherchable —
+/// seuls le type fin, le résumé et les mots-clés manquent.
 public struct AnalyzeDocument: Sendable {
     private let vault: VaultService
     private let database: DropIndexDatabase
@@ -21,10 +26,13 @@ public struct AnalyzeDocument: Sendable {
     private let dateExtractor = DateExtractor()
     private let identifierExtractor = IdentifierExtractor()
     private let issuerDictionary = IssuerDictionary()
+    private let insightGenerator: DocumentInsightGenerator
+    private let contextSelector = ContextSelector()
 
-    public init(vault: VaultService, database: DropIndexDatabase) {
+    public init(vault: VaultService, database: DropIndexDatabase, insightGenerator: DocumentInsightGenerator = DocumentInsightGenerator()) {
         self.vault = vault
         self.database = database
+        self.insightGenerator = insightGenerator
     }
 
     public func analyze(documentID: String) async throws {
@@ -52,8 +60,19 @@ public struct AnalyzeDocument: Sendable {
                 + issuerDictionary.match(in: page.content)
         }
 
-        let issuer = entities.first { $0.kind == .org }?.valueText
+        let deterministicIssuer = entities.first { $0.kind == .org }?.valueText
         let effectiveDate = Self.resolveEffectiveDate(entities: entities, addedAt: addedAt)
+
+        let context = contextSelector.select(
+            pages: pages.map { PageContent(pageNumber: $0.pageNumber, text: $0.content) },
+            filename: originalFilename
+        )
+        let insight = await Self.generateInsight(text: context, generator: insightGenerator)
+
+        // ADR-09 : le modèle ne fournit un émetteur que si le dictionnaire déterministe n'a rien
+        // trouvé — jamais l'inverse, jamais une valeur numérique ou temporelle (hors du schéma
+        // `DocumentInsight`, qui ne les expose pas).
+        let issuer = deterministicIssuer ?? insight?.issuer
 
         try await database.pool.write { db in
             try db.execute(sql: "DELETE FROM page_texts WHERE document_id = ?", arguments: [documentID])
@@ -86,27 +105,46 @@ public struct AnalyzeDocument: Sendable {
             }
 
             // EF-48 : un champ dont le bit `user_verified` est posé n'est plus jamais réécrit par
-            // le pipeline (§4.4 — masque type=1, issuer=2, effectiveDate=4).
+            // le pipeline (§4.4 — masque type=1, issuer=2, effectiveDate=4). `COALESCE` sur le
+            // type/résumé : sans modèle disponible (§5.4.4), `insight` est `nil` et une analyse
+            // antérieure plus riche ne doit pas être effacée par une réanalyse dégradée.
             try db.execute(
                 sql: """
                 UPDATE documents SET
+                    doc_type = CASE WHEN (user_verified & 1) = 0 THEN COALESCE(?, doc_type) ELSE doc_type END,
+                    doc_type_conf = CASE WHEN (user_verified & 1) = 0 THEN COALESCE(?, doc_type_conf) ELSE doc_type_conf END,
                     issuer = CASE WHEN (user_verified & 2) = 0 THEN ? ELSE issuer END,
                     effective_date = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date END,
                     effective_date_src = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date_src END,
+                    summary = COALESCE(?, summary),
                     analysis_state = 'done'
                 WHERE id = ?
                 """,
-                arguments: [issuer, effectiveDate?.date, effectiveDate?.source.rawValue, documentID]
+                arguments: [
+                    insight?.type.rawValue, insight?.confidence, issuer, effectiveDate?.date,
+                    effectiveDate?.source.rawValue, insight?.summary, documentID,
+                ]
             )
 
-            // Reflète l'émetteur réellement retenu (celui du pipeline, ou celui conservé si
-            // l'utilisateur l'a corrigé) — jamais une valeur qu'EF-48 vient d'écarter ci-dessus.
-            let retainedIssuer: String? = try String.fetchOne(db, sql: "SELECT issuer FROM documents WHERE id = ?", arguments: [documentID])
+            // Reflète les valeurs réellement retenues (celles du pipeline, ou celles conservées si
+            // l'utilisateur les a corrigées) — jamais une valeur qu'EF-48 vient d'écarter ci-dessus.
+            let retained = try Row.fetchOne(db, sql: "SELECT issuer FROM documents WHERE id = ?", arguments: [documentID])
+            let retainedIssuer: String? = retained?["issuer"]
+            let keywords = insight?.keywords.joined(separator: " ") ?? ""
             try db.execute(
-                sql: "UPDATE fts_docs SET body = ?, issuer = ? WHERE document_id = ?",
-                arguments: [fullText, retainedIssuer ?? "", documentID]
+                sql: "UPDATE fts_docs SET body = ?, issuer = ?, keywords = ? WHERE document_id = ?",
+                arguments: [fullText, retainedIssuer ?? "", keywords, documentID]
             )
         }
+    }
+
+    /// `nil` en dehors du plein régime (§5.4.4) — machine non éligible, Apple Intelligence
+    /// désactivée, modèle pas encore prêt — ou si l'inférence échoue : l'analyse déterministe
+    /// suffit à rendre le document cherchable, jamais une erreur bloquante ici (EF-07).
+    private static func generateInsight(text: String, generator: DocumentInsightGenerator) async -> DocumentInsight? {
+        guard case .fullPipeline = DegradationPolicy.behavior(for: generator.availability) else { return nil }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return try? await generator.generate(fromText: text)
     }
 
     private static func resolveEffectiveDate(entities: [ExtractedEntity], addedAt: String) -> EffectiveDate.Result? {

@@ -14,6 +14,21 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     return url
 }
 
+/// `AnalyzeDocument` appelle désormais le modèle de langage système pour classer/résumer
+/// (§5.4) : sa latence réelle varie fortement (quasi instantané à indisponible → plusieurs
+/// dizaines de secondes selon la machine, cf. `AnalyzeDocumentTests`). Un délai fixe après
+/// `handleDrop` serait soit trop court, soit inutilement long — on sonde plutôt jusqu'à ce que
+/// la recherche renvoie quelque chose, avec un plafond généreux.
+@MainActor
+private func waitUntilSearchable(_ environment: AppEnvironment, query: String, timeout: TimeInterval = 40) async {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        await environment.search(query)
+        if !environment.searchResults.isEmpty { return }
+        try? await Task.sleep(for: .milliseconds(300))
+    }
+}
+
 /// Preuve réelle que le chemin exact suivi par la vue (`DropZoneView.handle` → `handleDrop`) mène
 /// à un document réellement ingéré, analysé et retrouvable — pas seulement que les cas d'usage
 /// `DropFeatures` fonctionnent isolément (déjà couvert ailleurs), mais que le bootstrap qui les
@@ -24,17 +39,12 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
 
     environment.handleDrop(of: [source])
 
-    // L'ingestion et l'analyse tournent dans une Task détachée par `handleDrop`. La vérification
-    // de stabilité EF-11 impose déjà 2 s d'attente interne avant toute écriture — on laisse une
-    // marge au-delà plutôt que de coupler ce test à un mécanisme de complétion interne.
-    try await Task.sleep(for: .milliseconds(3000))
-
     // « EDF » plutôt que « facture edf » : « facture » est un mot du dictionnaire de types
-    // (EF-65) — le mot serait retiré du texte libre et transformé en filtre `doc_type = facture`,
-    // que ce document ne peut pas satisfaire puisque la classification par le modèle de langage
-    // n'est pas câblée dans ce pipeline (seul le sous-ensemble déterministe tourne, cf.
-    // `AnalyzeDocument`). Un vrai utilisateur tomberait sur la même limite avec ce mot-clé.
-    await environment.search("EDF")
+    // (EF-65) — le mot serait retiré du texte libre et transformé en filtre `doc_type = facture`.
+    // Le pipeline classe désormais réellement les documents (cf. `AnalyzeDocument`), donc ce
+    // filtre pourrait aboutir, mais seulement une fois l'analyse terminée — chercher sur un mot
+    // hors dictionnaire reste la vérification la plus rapide et la moins couplée à cette latence.
+    await waitUntilSearchable(environment, query: "EDF")
     #expect(environment.searchResults.contains { $0.displayName.contains("facture-edf") })
 }
 
@@ -43,14 +53,11 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     let source = try writeSourceFile(named: "contrat.txt", contents: "Contrat de location signé")
 
     environment.handleDrop(of: [source])
-    try await Task.sleep(for: .milliseconds(3000))
+    await waitUntilSearchable(environment, query: "location")
 
     environment.handleDrop(of: [source])
-    try await Task.sleep(for: .milliseconds(3000))
+    await waitUntilSearchable(environment, query: "location")
 
-    // « location » plutôt que « contrat » : « contrat » est aussi un mot du dictionnaire de
-    // types (EF-65), même limite que ci-dessus.
-    await environment.search("location")
     let matches = environment.searchResults.filter { $0.displayName.contains("contrat") }
     #expect(matches.count == 1)
 }
@@ -60,11 +67,10 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     let source = try writeSourceFile(named: "releve.txt", contents: "Relevé bancaire janvier")
 
     environment.handleDrop(of: [source])
-    try await Task.sleep(for: .milliseconds(3000))
 
     // « bancaire » plutôt que « relevé » : « relevé »/« relevés » déclenchent le même filtre de
     // type que ci-dessus.
-    await environment.search("bancaire")
+    await waitUntilSearchable(environment, query: "bancaire")
     #expect(!environment.searchResults.isEmpty)
 
     await environment.search("")
@@ -76,7 +82,7 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     let source = try writeSourceFile(named: "doc.txt", contents: String(repeating: "contenu ", count: 100))
 
     environment.handleDrop(of: [source])
-    try await Task.sleep(for: .milliseconds(3000))
+    await waitUntilSearchable(environment, query: "contenu")
 
     let budget = await environment.computeBudget()
     #expect(budget.vaultSizeBytes > 0)
@@ -91,9 +97,8 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     let source = try writeSourceFile(named: "apercu.txt", contents: content)
 
     environment.handleDrop(of: [source])
-    try await Task.sleep(for: .milliseconds(3000))
+    await waitUntilSearchable(environment, query: "prévisualiser")
 
-    await environment.search("prévisualiser")
     guard let result = environment.searchResults.first else {
         Issue.record("le document ingéré devrait être retrouvable")
         return

@@ -73,3 +73,47 @@ private func makeTestPDF(text: String, at url: URL, pageSize: CGSize = CGSize(wi
     #expect(amountCount >= 1)
     #expect(dateCount >= 1)
 }
+
+/// Preuve que `AnalyzeDocument` appelle réellement le modèle de langage pour classer/résumer —
+/// pas seulement que `DocumentInsightGenerator` fonctionne isolément (déjà couvert dans
+/// `DropIntelligenceTests`), mais que le résultat est bien persisté dans `documents`/`fts_docs`.
+/// `withKnownIssue` : la disponibilité d'Apple Intelligence n'est pas garantie sur toutes les
+/// machines/CI (§5.4.5, DRO-16) — sans elle, l'analyse déterministe seule s'applique (dégradation
+/// documentée, §5.4.4), ce que ce test ne peut pas distinguer d'un échec sans le modèle disponible.
+@Test func analyzeDocumentClassifiesAndSummarizesViaTheLanguageModelWhenAvailable() async throws {
+    await withKnownIssue("Apple Intelligence peut être indisponible sur cette machine/CI (§5.4.4)", isIntermittent: true) {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent("drop-analyze-insight-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+        let sourcePDF = tempRoot.appendingPathComponent("facture edf.pdf")
+        let longText = """
+        Facture EDF. Client : Jean Dupont, 12 rue des Lilas, 75000 Paris.
+        Date d'émission : 14/07/2025. Montant : net à payer 84,20 €.
+        Merci de votre confiance. Référence client 1234567890.
+        """
+        try makeTestPDF(text: longText, at: sourcePDF)
+
+        let vaultRoot = tempRoot.appendingPathComponent("vault-root")
+        let vault = VaultService(vaultRoot: vaultRoot, fileSystem: LiveFileSystem())
+        let dbPath = tempRoot.appendingPathComponent("index.sqlite").path
+        let database = try DropIndexDatabase(path: dbPath)
+
+        let ingest = IngestFiles(vault: vault, database: database, sleeper: ImmediateSleeper())
+        guard case .created(let documentID) = try await ingest.ingest(fileAt: sourcePDF) else {
+            Issue.record("expected a created document"); return
+        }
+
+        let analyze = AnalyzeDocument(vault: vault, database: database)
+        try await analyze.analyze(documentID: documentID)
+
+        let (docType, summary, keywords): (String?, String?, String) = try await database.pool.read { db in
+            let row = try Row.fetchOne(db, sql: "SELECT doc_type, summary FROM documents WHERE id = ?", arguments: [documentID])!
+            let keywords: String = try String.fetchOne(db, sql: "SELECT keywords FROM fts_docs WHERE document_id = ?", arguments: [documentID]) ?? ""
+            return (row["doc_type"], row["summary"], keywords)
+        }
+
+        #expect(docType == "facture")
+        #expect(summary != nil && !(summary?.isEmpty ?? true))
+        #expect(!keywords.isEmpty)
+    }
+}
