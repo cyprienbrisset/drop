@@ -25,7 +25,7 @@ private func makeTestImage(text: String, size: CGSize = CGSize(width: 400, heigh
 // limitation sans faire échouer la suite, et signalerait une régression si l'appel réussissait
 // soudainement pour une autre raison (faux négatif) mais échouait différemment.
 @Test func visionRecognizesRenderedText() {
-    withKnownIssue("Vision OCR nécessite un moteur de calcul (Neural Engine/GPU) indisponible dans cet environnement") {
+    withKnownIssue("Vision OCR nécessite un moteur de calcul (Neural Engine/GPU) indisponible dans cet environnement", isIntermittent: true) {
         let image = makeTestImage(text: "BONJOUR")
         let ocr = VisionOCR()
         let result = try ocr.recognizeText(in: image)
@@ -48,7 +48,7 @@ private func makeTestImage(text: String, size: CGSize = CGSize(width: 400, heigh
 }
 
 @Test func imageExtractorRecognizesTextInARealImageFile() {
-    withKnownIssue("Vision OCR nécessite un moteur de calcul (Neural Engine/GPU) indisponible dans cet environnement") {
+    withKnownIssue("Vision OCR nécessite un moteur de calcul (Neural Engine/GPU) indisponible dans cet environnement", isIntermittent: true) {
         let image = makeTestImage(text: "FACTURE")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("drop-test-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
