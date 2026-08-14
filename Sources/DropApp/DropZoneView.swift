@@ -2,41 +2,29 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Contenu du popover de la tray icon (EX-01, EX-02) : zone de glisser-déposer, puis les mêmes
-/// trois actions qu'un menu classique (rechercher, préférences, quitter) — en style `.window`
-/// pour que le glisser-déposer fonctionne (le style `.menu` de `MenuBarExtra` ne le permet pas).
+/// trois actions qu'un menu classique (rechercher, préférences, quitter). L'ouverture des fenêtres
+/// Recherche/Préférences est déléguée à `AppDelegate` (closures) plutôt qu'aux actions
+/// d'environnement SwiftUI (`openWindow`/`openSettings`) : ce popover est hébergé par un
+/// `NSHostingController` créé manuellement par `AppDelegate`, hors du graphe de scènes SwiftUI,
+/// où ces actions d'environnement n'ont pas de scène à laquelle s'accrocher.
 struct DropZoneView: View {
     let environment: AppEnvironment
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+    var onOpenSearch: () -> Void = {}
+    var onOpenPreferences: () -> Void = {}
     @State private var isTargeted = false
 
     var body: some View {
         VStack(spacing: 10) {
             dropZone
             Divider()
-            actionRow(systemImage: "magnifyingglass", title: "Rechercher…") {
-                activateAndRun { openWindow(id: "search") }
-            }
-            actionRow(systemImage: "gearshape", title: "Préférences…") {
-                activateAndRun { openSettings() }
-            }
+            actionRow(systemImage: "magnifyingglass", title: "Rechercher…", action: onOpenSearch)
+            actionRow(systemImage: "gearshape", title: "Préférences…", action: onOpenPreferences)
             actionRow(systemImage: "power", title: "Quitter Drop") {
                 NSApplication.shared.terminate(nil)
             }
         }
         .padding(12)
         .frame(width: 260)
-    }
-
-    /// Sans ceci, `openWindow`/`openSettings` déclenchés depuis le popover d'une `MenuBarExtra`
-    /// n'amènent parfois aucune fenêtre au premier plan : l'app (accessoire, sans icône Dock)
-    /// n'est jamais devenue « active » au sens AppKit tant qu'on reste dans le popover. Activer
-    /// explicitement avant d'ouvrir la scène est le correctif documenté pour ce cas.
-    private func activateAndRun(_ action: @escaping () -> Void) {
-        NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async {
-            action()
-        }
     }
 
     private var dropZone: some View {
