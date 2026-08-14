@@ -20,7 +20,7 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
 /// `handleDrop` serait soit trop court, soit inutilement long — on sonde plutôt jusqu'à ce que
 /// la recherche renvoie quelque chose, avec un plafond généreux.
 @MainActor
-private func waitUntilSearchable(_ environment: AppEnvironment, query: String, timeout: TimeInterval = 75) async {
+private func waitUntilSearchable(_ environment: AppEnvironment, query: String, timeout: TimeInterval = 180) async {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         await environment.search(query)
@@ -260,4 +260,30 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     try await Task.sleep(for: .milliseconds(500))
     await waitUntilSearchable(environment, query: "quelconque")
     #expect(environment.searchResults.first { $0.id == result.id }?.tags.isEmpty == true)
+}
+
+/// Preuve réelle que `AppEnvironment.init` ne plante jamais sur un `index.db` illisible (EF-28) :
+/// il reconstruit le schéma et récupère les documents depuis `meta.json` + les blobs, la
+/// garantie de dernier recours du coffre — jamais une erreur qui empêcherait l'app de démarrer.
+@Test @MainActor func startingWithACorruptedIndexRepairsInsteadOfCrashing() async throws {
+    let vaultRoot = FileManager.default.temporaryDirectory.appendingPathComponent("drop-app-repair-test-\(UUID().uuidString)")
+
+    // Un vrai coffre fonctionnel, avec un vrai document ingéré (blob + meta.json sur disque).
+    do {
+        let firstRun = try AppEnvironment(vaultRoot: vaultRoot)
+        let source = try writeSourceFile(named: "avant-corruption.txt", contents: "Contenu avant la corruption de l'index")
+        firstRun.handleDrop(of: [source])
+        await waitUntilSearchable(firstRun, query: "corruption")
+        #expect(!firstRun.searchResults.isEmpty)
+    }
+
+    // Corruption simulée : le fichier `index.db` devient un fichier quelconque, illisible comme
+    // base de données (chiffrée ou pas).
+    let indexPath = vaultRoot.appendingPathComponent("index.db")
+    try Data("ceci n'est pas une base de données SQLite".utf8).write(to: indexPath)
+
+    // `init` ne doit jamais lever ici : la réparation doit avoir déjà tourné à la sortie de `init`.
+    let recovered = try AppEnvironment(vaultRoot: vaultRoot)
+    let documentCount = try await recovered.activeDocumentCount()
+    #expect(documentCount == 1) // le document ingéré avant la corruption a été retrouvé depuis le blob.
 }

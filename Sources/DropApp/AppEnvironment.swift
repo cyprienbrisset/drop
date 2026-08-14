@@ -75,9 +75,8 @@ final class AppEnvironment {
         // Mode Standard (DRO-51) : la clé vit au Keychain, jamais sur disque en clair. Un coffre
         // est identifié par son chemin — deux coffres à deux emplacements ont deux clés distinctes.
         let passphrase = try VaultEncryptionKey.getOrCreate(store: SecKeychainKeyStore(), account: vaultRoot.path)
-        let indexDatabase = try DropIndexDatabase(
-            path: vaultRoot.appendingPathComponent("index.db").path, passphrase: passphrase
-        )
+        let indexPath = vaultRoot.appendingPathComponent("index.db").path
+        let indexDatabase = try Self.openOrRepairIndex(vaultRoot: vaultRoot, indexPath: indexPath, passphrase: passphrase)
         // `vectors.db` reste non chiffré par exception documentée (§4.3) ; son absence ne doit
         // jamais empêcher le reste de l'app de fonctionner (recherche lexicale seule en repli).
         let vectorsDatabase = try? VectorsDatabase(path: vaultRoot.appendingPathComponent("vectors.db").path)
@@ -97,6 +96,37 @@ final class AppEnvironment {
         self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
         Task { await self.jobWorker.start() }
         Task { await self.runMaintenanceLoop() }
+    }
+
+    /// EF-28 : un schéma illisible ne doit jamais faire planter l'app au démarrage — le coffre
+    /// reste reconstructible depuis `meta.json` et les blobs (garantie de dernier recours, §4.3).
+    /// L'ancien fichier est mis de côté (I3 : jamais perdu) plutôt que supprimé.
+    private static func openOrRepairIndex(vaultRoot: URL, indexPath: String, passphrase: Data) throws -> DropIndexDatabase {
+        if let database = try? DropIndexDatabase(path: indexPath, passphrase: passphrase) {
+            return database
+        }
+
+        let brokenURL = URL(fileURLWithPath: indexPath)
+        let quarantineURL = brokenURL.deletingLastPathComponent()
+            .appendingPathComponent("index-corrupted-\(ISO8601DateFormatter().string(from: Date())).db")
+        try? FileManager.default.moveItem(at: brokenURL, to: quarantineURL)
+        for suffix in ["-wal", "-shm"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: indexPath + suffix))
+        }
+
+        let freshDatabase = try DropIndexDatabase(path: indexPath, passphrase: passphrase)
+
+        // `RepairVault.rebuildIndex` est asynchrone ; cette réparation, elle, ne peut arriver que
+        // pendant l'initialisation synchrone de l'app (avant toute UI) — le pont par sémaphore
+        // reste local à ce seul chemin de secours, jamais utilisé sur le chemin normal.
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            _ = try? await RepairVault(vaultRoot: vaultRoot).rebuildIndex(into: freshDatabase)
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        return freshDatabase
     }
 
     // MARK: - Entretien (purge corbeille EF-23, intégrité EF-27)
