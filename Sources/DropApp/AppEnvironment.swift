@@ -38,6 +38,7 @@ final class AppEnvironment {
     let manageTrash: ManageTrash
     let exportDocuments: ExportDocuments
     private let jobQueue: JobQueue
+    private let jobWorker: JobWorker
     private let queryParser = QueryParser()
 
     var dropZoneState: DropZoneState = .idle
@@ -77,6 +78,8 @@ final class AppEnvironment {
         self.manageTrash = ManageTrash(vault: vault, database: indexDatabase)
         self.exportDocuments = ExportDocuments(vault: vault, database: indexDatabase)
         self.jobQueue = JobQueue(database: indexDatabase)
+        self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
+        Task { await self.jobWorker.start() }
     }
 
     // MARK: - Ingestion (Drop Zone, EF-01 à EF-13)
@@ -96,12 +99,10 @@ final class AppEnvironment {
             switch outcome {
             case .created(let documentID):
                 dropZoneState = .success(fileName: fileName)
-                // Note de portée : aucun worker ne draine encore la file en tâche de fond
-                // (DRO-31 pose la structure, pas le worker) — l'analyse tourne donc en ligne ici
-                // pour que le document soit exploitable tout de suite, tout en restant enfilée
-                // pour la traçabilité (`jobs`) en vue du futur worker.
+                // L'analyse (y compris l'appel au modèle de langage, parfois 20-30 s) tourne en
+                // tâche de fond via `jobWorker` — le dépôt reste instantané, le document est déjà
+                // cherchable sur ses métadonnées et devient pleinement enrichi peu après (EF-40).
                 _ = try? await jobQueue.enqueue(documentID: documentID, kind: .extract)
-                try? await analyzeDocument.analyze(documentID: documentID)
             case .exactDuplicate:
                 dropZoneState = .duplicate(fileName: fileName)
             }
