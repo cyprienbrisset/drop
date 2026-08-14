@@ -109,6 +109,22 @@ public struct VaultService: Sendable {
         return BlobWriteResult(hash: hash, sizeBytes: sizeBytes, blobURL: blobURL, metadataURL: metadataURL, isNewBlob: true)
     }
 
+    // MARK: - Intégrité (EF-27)
+
+    public enum BlobVerificationStatus: String, Sendable, Equatable {
+        case ok, corrupt, missing
+    }
+
+    /// Recalcule le hash d'un blob et le compare à son nom (§4.3) : la vérité d'intégrité vient
+    /// du contenu, jamais de la base — un blob « corrupt » n'est jamais supprimé ici (EF-27), la
+    /// décision de suppression reste hors de ce module.
+    public func verifyBlob(hash: String) -> BlobVerificationStatus {
+        let (blobURL, _) = paths(forHash: hash)
+        guard fileSystem.fileExists(at: blobURL) else { return .missing }
+        guard let actualHash = try? VaultHashing.sha256(ofFileAt: blobURL, fileSystem: fileSystem) else { return .missing }
+        return actualHash == hash ? .ok : .corrupt
+    }
+
     // MARK: - Corbeille (EF-23, §5.9)
 
     private func trashRecordURL(forDocumentID documentID: String) -> URL {
