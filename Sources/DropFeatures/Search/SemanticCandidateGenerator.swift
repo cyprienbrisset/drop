@@ -21,9 +21,9 @@ public struct SemanticCandidateGenerator: CandidateGenerator {
 
     public func candidates(for query: ParsedQuery, limit: Int) async throws -> [RankedDocument] {
         let text = query.freeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, embedder.hasAvailableAssets else { return [] }
+        guard !text.isEmpty, await embedder.hasAvailableAssets else { return [] }
 
-        let vector = try embedder.embed(text)
+        let vector = try await embedder.embed(text)
         let quantized = EmbeddingQuantizer.quantize(vector)
         // Sur-échantillonnage : plusieurs chunks du même document peuvent apparaître parmi les
         // voisins les plus proches, l'agrégation par document réduit ensuite ce nombre.

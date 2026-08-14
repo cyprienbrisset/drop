@@ -15,10 +15,16 @@ public enum ContextualEmbedderError: Error, Sendable, Equatable {
 /// nécessaire — vérifié : `NLContextualEmbedding(language: .french).dimension == 512`), moyenne
 /// des vecteurs de sous-mots (§5.5). Documents de moins de 30 tokens utiles : pas d'embedding
 /// (contrôle à la charge de l'appelant, avant même d'atteindre ce type).
-public struct ContextualEmbedder: Sendable {
-    // `NLContextualEmbedding` n'est pas `Sendable`, mais cette instance n'est jamais partagée
-    // en écriture concurrente au sein d'un même appel — `embed` est synchrone de bout en bout.
-    nonisolated(unsafe) private let embedding: NLContextualEmbedding
+///
+/// `actor`, pas `struct` : `NLContextualEmbedding` n'est pas thread-safe pour des appels
+/// concurrents sur la même instance — deux recherches lancées à la volée pendant la frappe (une
+/// requête par debounce, la précédente annulée côté Swift sans que l'appel `embeddingResultForString:`
+/// déjà en cours ne s'arrête pour autant) pouvaient faire chevaucher deux `load()`/`embeddingResultForString:`
+/// sur le moteur E5RT/BNNS sous-jacent, provoquant un vrai crash natif (`EXC_BAD_ACCESS`, pas une
+/// erreur Swift rattrapable). L'acteur sérialise tous les appels, y compris entre document
+/// et requête de recherche : plus jamais deux appels concurrents sur la même instance.
+public actor ContextualEmbedder {
+    private let embedding: NLContextualEmbedding
 
     public init?() {
         guard let embedding = NLContextualEmbedding(language: .french) else { return nil }
