@@ -2,7 +2,7 @@
 /// Toujours issue d'un extracteur regex/métadonnée — jamais du modèle de langage (ADR-09).
 public struct ExtractedEntity: Sendable {
     public enum Kind: String, Sendable {
-        case amount, date, iban, siret, vat, invoiceRef, orderRef, org, email, phone, person
+        case amount, date, iban, siret, siren, vat, invoiceRef, orderRef, org, email, phone, person
     }
 
     public enum Extractor: String, Sendable {
