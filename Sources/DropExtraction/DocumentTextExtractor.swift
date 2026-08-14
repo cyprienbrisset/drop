@@ -12,6 +12,7 @@ public struct DocumentTextExtractor: Sendable {
     private let image = ImageTextExtractor()
     private let rasterizer = PDFPageRasterizer()
     private let ocr = VisionOCR()
+    private let ooxml = OOXMLTextExtractor()
 
     /// Plafond de pages OCRisées automatiquement par document (§5.2) ; l'extension manuelle au-delà
     /// est une action utilisateur explicite, pas encore câblée ici.
@@ -39,6 +40,10 @@ public struct DocumentTextExtractor: Sendable {
             return try attributed.extract(fileAt: url, documentType: .html)
         case "docx":
             return try attributed.extract(fileAt: url, documentType: .officeOpenXML)
+        case "xlsx":
+            return try ooxml.extract(fileAt: url, kind: .xlsx)
+        case "pptx":
+            return try ooxml.extract(fileAt: url, kind: .pptx)
         case "png", "jpg", "jpeg", "heic", "tiff", "tif", "gif", "bmp":
             return try image.extract(fileAt: url)
         default:
