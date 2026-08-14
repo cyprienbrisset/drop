@@ -13,6 +13,7 @@ public protocol FileSystem: Sendable {
     func write(_ data: Data, to url: URL) throws
     func syncFile(at url: URL) throws
     func syncDirectory(at url: URL) throws
+    func contentsOfDirectory(at url: URL) throws -> [URL]
 }
 
 /// Implémentation réelle, adossée à `FileManager`. Utilisée en production uniquement.
@@ -63,5 +64,9 @@ public struct LiveFileSystem: FileSystem {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         try handle.synchronize()
+    }
+
+    public func contentsOfDirectory(at url: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
     }
 }
