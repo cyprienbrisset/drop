@@ -2,7 +2,7 @@ import Foundation
 
 /// Sortie du parser de requête déterministe (§5.6). Aucun appel au modèle de langage : le budget
 /// de latence l'interdit, et les filtres restent opérationnels même en pipeline dégradé.
-public struct ParsedQuery: Sendable {
+public struct ParsedQuery: Sendable, Equatable {
     public var freeText: String = ""
     public var phrases: [String] = []
     public var excluded: [String] = []
