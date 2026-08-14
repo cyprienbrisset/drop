@@ -14,12 +14,26 @@ public struct ExtractedEntity: Sendable {
     public let rawText: String
     public let extractor: Extractor
     public let confidence: Double
+    /// Montant normalisé (kind == .amount).
+    public let valueNum: Double?
+    /// Date normalisée ISO 8601 `yyyy-MM-dd` (kind == .date).
+    public let valueDate: String?
+    /// Code devise ISO (kind == .amount), ex. "EUR".
+    public let currency: String?
+    public let pageNo: Int?
 
-    public init(kind: Kind, valueText: String, rawText: String, extractor: Extractor, confidence: Double = 1.0) {
+    public init(
+        kind: Kind, valueText: String, rawText: String, extractor: Extractor, confidence: Double = 1.0,
+        valueNum: Double? = nil, valueDate: String? = nil, currency: String? = nil, pageNo: Int? = nil
+    ) {
         self.kind = kind
         self.valueText = valueText
         self.rawText = rawText
         self.extractor = extractor
         self.confidence = confidence
+        self.valueNum = valueNum
+        self.valueDate = valueDate
+        self.currency = currency
+        self.pageNo = pageNo
     }
 }
