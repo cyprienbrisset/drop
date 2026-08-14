@@ -35,12 +35,36 @@ final class DropTargetStatusView: NSView {
         imageView.imageScaling = .scaleProportionallyDown
         imageView.frame = bounds.insetBy(dx: 3, dy: 3)
         imageView.autoresizingMask = [.width, .height]
+        // L'image porte déjà une description ; elle ne doit jamais être un second élément
+        // VoiceOver distinct de cette vue (`isAccessibilityElement` ci-dessous porte, seule,
+        // le rôle et le libellé de l'icône entière).
+        imageView.setAccessibilityElement(false)
         addSubview(imageView)
         registerForDraggedTypes([.fileURL])
     }
 
     override func mouseDown(with event: NSEvent) {
         onClick?()
+    }
+
+    // MARK: - Accessibilité (DRO-50)
+
+    /// `NSStatusItem.view` (voir le commentaire en tête de fichier) contourne
+    /// `NSStatusBarButton`, qui expose son rôle/libellé à VoiceOver automatiquement — cette vue
+    /// personnalisée doit donc le faire elle-même, sans quoi l'unique point d'entrée de
+    /// l'application resterait invisible au rotor VoiceOver.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { "Drop" }
+    override func accessibilityHelp() -> String? {
+        "Ouvre le menu de Drop. Glissez un document ici pour le déposer dans le coffre."
+    }
+
+    /// VoiceOver déclenche une pression via cette action plutôt qu'un vrai clic souris — sans
+    /// elle, l'icône serait annoncée mais jamais activable par un utilisateur VoiceOver.
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {

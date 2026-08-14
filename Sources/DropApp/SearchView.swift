@@ -21,10 +21,15 @@ struct SearchView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Rechercher un document…", text: $queryText)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($isSearchFieldFocused)
+                    // Le texte du champ remplace le placeholder une fois la saisie commencée ;
+                    // sans libellé explicite, VoiceOver ne saurait plus dire ce que le champ
+                    // représente dès qu'il n'est plus vide.
+                    .accessibilityLabel("Rechercher un document")
                 if environment.isSearching {
                     ProgressView()
                         .controlSize(.small)
@@ -54,6 +59,14 @@ struct SearchView: View {
                         .tag(result.id)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { detailResult = result }
+                        // ↵ / ⌘↵ / Espace / ⌘⌫ ne s'activent que si le champ de recherche n'a
+                        // pas le focus (cf. plus bas) — un utilisateur VoiceOver naviguant au
+                        // rotor plutôt qu'au clavier doit disposer des mêmes actions sans
+                        // dépendre de cet état de focus.
+                        .accessibilityAction(named: "Ouvrir") { environment.open(result) }
+                        .accessibilityAction(named: "Révéler dans le Finder") { environment.reveal(result) }
+                        .accessibilityAction(named: "Aperçu rapide") { quickLookURL = result.previewURL }
+                        .accessibilityAction(named: "Retirer du coffre") { environment.remove(result) }
                 }
                 .listStyle(.plain)
             }

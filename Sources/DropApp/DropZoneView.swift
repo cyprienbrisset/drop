@@ -44,6 +44,7 @@ struct DropZoneView: View {
                     .font(.system(size: 26))
                     .foregroundStyle(statusColor)
                     .symbolEffect(.bounce, value: environment.dropZoneState)
+                    .accessibilityHidden(true)
                 Text(statusText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -51,6 +52,9 @@ struct DropZoneView: View {
                     .lineLimit(2)
             }
             .padding(14)
+            // EX-09/ENF-40 : le statut est une seule annonce (le texte suffit déjà à le dire),
+            // jamais l'icône décorative en plus comme second élément disjoint.
+            .accessibilityElement(children: .combine)
         }
         .frame(height: 110)
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
