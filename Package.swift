@@ -20,9 +20,14 @@ let package = Package(
         .executable(name: "ValidationHarness", targets: ["ValidationHarness"]),
     ],
     dependencies: [
-        // Dépendance tierce autorisée (§4.1). SQLCipher sera substitué au SQLite système en
-        // Phase 8 (DRO-51) sans changement de DAO — GRDB reste la seule couche SQL du projet.
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
+        // Fork local (DRO-51, ADR-05) : le commutateur SQLCipher de GRDB.swift ne peut être activé
+        // que depuis le Package.swift de GRDB lui-même, pas depuis un dépendant distant — voir
+        // `Vendor/GRDB.swift/Package.swift` pour le détail. GRDB reste la seule couche SQL du projet.
+        .package(path: "Vendor/GRDB.swift"),
+        // Binaire officiel SQLCipher (checksums vérifiés par SPM), même dépendance que celle
+        // utilisée par le fork GRDB — `CSQLiteVec` doit lier exactement le même moteur SQLite que
+        // GRDB, jamais une seconde copie (symboles dupliqués au link).
+        .package(url: "https://github.com/sqlcipher/SQLCipher.swift.git", from: "4.17.0"),
     ],
     targets: [
         // Socle : aucune dépendance. Types, erreurs, journalisation, horloge injectable, FS abstrait.
@@ -39,13 +44,15 @@ let package = Package(
         .target(name: "DropEntities", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "DropIntelligence", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         // Amalgamation vendorisée de `sqlite-vec` (§4.1, dépendance tierce autorisée). `SQLITE_CORE`
-        // : compilé pour un lien statique direct contre le SQLite système (comme `GRDBSQLite`),
+        // : compilé pour un lien statique direct contre le moteur SQLite (comme `GRDBSQLCipher`),
         // pas comme extension chargée dynamiquement — les symboles `sqlite3_*` sont résolus au
-        // link, sans passer par la table `sqlite3_api_routines`.
+        // link, sans passer par la table `sqlite3_api_routines`. Depuis DRO-51, ce moteur est
+        // SQLCipher (même binaire que celui lié par GRDB, §4.3 — `vectors.db` reste non chiffré,
+        // mais doit tourner sur le même moteur que `index.db`, jamais une seconde copie de SQLite).
         .target(
             name: "CSQLiteVec",
-            cSettings: [.define("SQLITE_CORE")],
-            linkerSettings: [.linkedLibrary("sqlite3")]
+            dependencies: [.product(name: "SQLCipher", package: "SQLCipher.swift")],
+            cSettings: [.define("SQLITE_CORE"), .define("SQLITE_HAS_CODEC")]
         ),
         .target(
             name: "DropEmbeddings",
@@ -77,7 +84,10 @@ let package = Package(
         // Tests — cibles prioritaires de couverture (§8.1) : DropCore, DropSearch, DropLicense.
         .testTarget(name: "DropCoreTests", dependencies: ["DropCore"]),
         .testTarget(name: "DropVaultTests", dependencies: ["DropVault"]),
-        .testTarget(name: "DropIndexTests", dependencies: ["DropIndex"]),
+        .testTarget(
+            name: "DropIndexTests",
+            dependencies: ["DropIndex", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
         .testTarget(name: "DropExtractionTests", dependencies: ["DropExtraction"]),
         .testTarget(name: "DropEntitiesTests", dependencies: ["DropEntities"]),
         .testTarget(name: "DropIntelligenceTests", dependencies: ["DropIntelligence"]),
