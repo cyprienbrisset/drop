@@ -201,17 +201,19 @@ final class AppEnvironment {
     }
 
     /// Quick Look et « Ouvrir » ont besoin d'un chemin avec le bon nom/extension pour détecter le
-    /// type de contenu — le blob lui-même est nommé par son seul hash (§4.3). Un lien symbolique
-    /// jetable dans `tmp/` évite toute copie tout en donnant ce nom correct.
+    /// type de contenu — le blob lui-même est nommé par son seul hash (§4.3). Une vraie copie
+    /// jetable dans `tmp/` (pas un lien symbolique : Finder et QuickLookUI ne les traitent pas
+    /// toujours comme le fichier réel — l'utilisateur voit alors un simple alias illisible et
+    /// sans aperçu) — mise en cache par hash+nom pour ne copier qu'une fois par document.
     private func previewURL(forHash hash: String, displayName: String) -> URL? {
         let (blobURL, _) = vault.paths(forHash: hash)
         guard FileManager.default.fileExists(atPath: blobURL.path) else { return nil }
-        let linkURL = vaultRoot.appendingPathComponent("tmp/preview-\(hash)-\(displayName)")
-        if !FileManager.default.fileExists(atPath: linkURL.path) {
-            try? FileManager.default.createDirectory(at: linkURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: blobURL)
+        let copyURL = vaultRoot.appendingPathComponent("tmp/preview-\(hash)-\(displayName)")
+        if !FileManager.default.fileExists(atPath: copyURL.path) {
+            try? FileManager.default.createDirectory(at: copyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.copyItem(at: blobURL, to: copyURL)
         }
-        return linkURL
+        return copyURL
     }
 
     private static func parseDay(_ string: String) -> Date? {

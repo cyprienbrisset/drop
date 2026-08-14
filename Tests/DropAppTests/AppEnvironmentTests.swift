@@ -81,3 +81,29 @@ private func writeSourceFile(named name: String, contents: String) throws -> URL
     let budget = await environment.computeBudget()
     #expect(budget.vaultSizeBytes > 0)
 }
+
+/// Régression : `previewURL` créait un lien symbolique, que Finder/QuickLookUI n'ouvrent pas
+/// toujours comme le fichier réel (l'utilisateur ne voit qu'un alias, sans aperçu ni contenu
+/// lisible). Ce doit être une vraie copie du contenu, exploitable indépendamment du coffre.
+@Test @MainActor func previewURLIsARealCopyNotASymbolicLink() async throws {
+    let environment = try makeEnvironment()
+    let content = "Contenu du document à prévisualiser"
+    let source = try writeSourceFile(named: "apercu.txt", contents: content)
+
+    environment.handleDrop(of: [source])
+    try await Task.sleep(for: .milliseconds(3000))
+
+    await environment.search("prévisualiser")
+    guard let result = environment.searchResults.first else {
+        Issue.record("le document ingéré devrait être retrouvable")
+        return
+    }
+    guard let previewURL = result.previewURL else {
+        Issue.record("previewURL ne devrait pas être nil pour un blob présent sur disque")
+        return
+    }
+
+    let attributes = try FileManager.default.attributesOfItem(atPath: previewURL.path)
+    #expect(attributes[.type] as? FileAttributeType != .typeSymbolicLink)
+    #expect(try String(contentsOf: previewURL, encoding: .utf8) == content)
+}
