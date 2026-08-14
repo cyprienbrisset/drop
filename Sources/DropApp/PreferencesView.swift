@@ -1,4 +1,5 @@
 import DropFeatures
+import DropLicense
 import SwiftUI
 
 /// Écran Préférences (EX-02) : emplacement du coffre (EF-20) et budget disque, affiché en
@@ -10,11 +11,21 @@ struct PreferencesView: View {
     let environment: AppEnvironment
 
     @State private var budget = VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
+    @State private var documentCount = 0
 
     var body: some View {
         Form {
             Section("Emplacement du coffre") {
                 LabeledContent("Dossier actuel", value: environment.vaultRoot.path)
+            }
+
+            Section("Licence") {
+                LabeledContent("Documents", value: "\(documentCount) / \(LicenseGate.freeCap) (version gratuite)")
+                if documentCount >= LicenseGate.freeCap {
+                    Text("Plafond atteint — les documents existants restent pleinement consultables ; l'ajout de nouveaux documents nécessite la version Pro.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Budget disque") {
@@ -25,8 +36,11 @@ struct PreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 260)
-        .task { budget = await environment.computeBudget() }
+        .frame(minWidth: 420, minHeight: 300)
+        .task {
+            budget = await environment.computeBudget()
+            documentCount = (try? await environment.activeDocumentCount()) ?? 0
+        }
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

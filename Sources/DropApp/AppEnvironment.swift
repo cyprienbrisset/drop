@@ -19,6 +19,9 @@ enum DropZoneState: Equatable {
     case success(fileName: String)
     case duplicate(fileName: String)
     case failure(fileName: String, message: String)
+    /// Rappel non modal (EF-84) : jamais une alerte système, juste un message inline dans la
+    /// zone de dépôt — l'utilisateur reste libre de continuer sans interruption.
+    case reminder(message: String)
 }
 
 /// Bootstrap applicatif (§4.2) : point unique où les cas d'usage de `DropFeatures` sont
@@ -135,6 +138,19 @@ final class AppEnvironment {
 
     private func ingest(fileAt url: URL) async {
         let fileName = url.lastPathComponent
+
+        let documentCountBefore = (try? await activeDocumentCount()) ?? 0
+        let stateBefore = LicenseGate.state(forVerifiedPayload: nil, documentCount: documentCountBefore)
+        guard LicenseGate.canIngestNewDocument(state: stateBefore) else {
+            dropZoneState = .failure(
+                fileName: fileName,
+                message: "Plafond de \(LicenseGate.freeCap) documents atteint (version gratuite)."
+            )
+            try? await Task.sleep(for: .seconds(3))
+            dropZoneState = .idle
+            return
+        }
+
         dropZoneState = .ingesting(fileName: fileName)
 
         do {
@@ -146,6 +162,15 @@ final class AppEnvironment {
                 // tâche de fond via `jobWorker` — le dépôt reste instantané, le document est déjà
                 // cherchable sur ses métadonnées et devient pleinement enrichi peu après (EF-40).
                 _ = try? await jobQueue.enqueue(documentID: documentID, kind: .extract)
+
+                // EF-84 : rappel unique et non modal au premier franchissement de 80 documents.
+                if LicenseGate.shouldShowCapReminder(documentCount: documentCountBefore + 1, alreadyShown: hasShownCapReminder) {
+                    hasShownCapReminder = true
+                    try? await Task.sleep(for: .seconds(2.5))
+                    dropZoneState = .reminder(
+                        message: "\(documentCountBefore + 1)/\(LicenseGate.freeCap) documents — pensez à la version Pro."
+                    )
+                }
             case .exactDuplicate:
                 dropZoneState = .duplicate(fileName: fileName)
             }
@@ -155,6 +180,20 @@ final class AppEnvironment {
 
         try? await Task.sleep(for: .seconds(2.5))
         dropZoneState = .idle
+    }
+
+    /// Nombre de documents actifs (hors corbeille) — utilisé pour le plafond gratuit (EF-81) et
+    /// son affichage dans les préférences.
+    func activeDocumentCount() async throws -> Int {
+        try await indexDatabase.pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM documents WHERE trashed_at IS NULL") ?? 0
+        }
+    }
+
+    private var hasShownCapReminderKey: String { "hasShownCapReminder-\(vaultRoot.path)" }
+    private var hasShownCapReminder: Bool {
+        get { UserDefaults.standard.bool(forKey: hasShownCapReminderKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasShownCapReminderKey) }
     }
 
     private static func describe(_ error: any Error) -> String {
@@ -194,6 +233,8 @@ final class AppEnvironment {
         let originalPath: String?
         let sizeBytes: Int64
         let blobHash: String
+        let keywords: [String]
+        let amount: Double?
     }
 
     private func hydrate(_ results: [SearchResult]) async throws -> [DocumentSearchResult] {
@@ -211,12 +252,42 @@ final class AppEnvironment {
                 """,
                 arguments: StatementArguments(documentIDs)
             )
+
+            let keywordRows = try Row.fetchAll(
+                db, sql: "SELECT document_id, keywords FROM fts_docs WHERE document_id IN (\(placeholders))",
+                arguments: StatementArguments(documentIDs)
+            )
+            var keywordsByID: [String: [String]] = [:]
+            for row in keywordRows {
+                let raw: String = row["keywords"]
+                keywordsByID[row["document_id"]] = raw.split(separator: " ").map(String.init)
+            }
+
+            // Le montant le plus digne de confiance par document (§5.3.1) : un document peut
+            // porter plusieurs montants (sous-total, TVA, net à payer) — on affiche celui que
+            // l'extracteur a jugé le plus fiable, à défaut le premier détecté.
+            let amountRows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT document_id, value_num FROM entities
+                WHERE document_id IN (\(placeholders)) AND kind = 'amount'
+                ORDER BY confidence DESC
+                """,
+                arguments: StatementArguments(documentIDs)
+            )
+            var amountByID: [String: Double] = [:]
+            for row in amountRows {
+                let documentID: String = row["document_id"]
+                if amountByID[documentID] == nil { amountByID[documentID] = row["value_num"] }
+            }
+
             return fetched.map { row in
-                DocumentRow(
-                    id: row["id"], displayName: row["display_name"], originalFilename: row["original_filename"],
+                let documentID: String = row["id"]
+                return DocumentRow(
+                    id: documentID, displayName: row["display_name"], originalFilename: row["original_filename"],
                     docType: row["doc_type"], issuer: row["issuer"], effectiveDate: row["effective_date"],
                     summary: row["summary"], originalPath: row["original_path"], sizeBytes: row["size_bytes"],
-                    blobHash: row["blob_hash"]
+                    blobHash: row["blob_hash"], keywords: keywordsByID[documentID] ?? [], amount: amountByID[documentID]
                 )
             }
         }
@@ -232,8 +303,8 @@ final class AppEnvironment {
                 docType: row.docType,
                 issuer: row.issuer,
                 effectiveDate: row.effectiveDate.flatMap(Self.parseDay),
-                amount: nil,
-                keywords: [],
+                amount: row.amount,
+                keywords: row.keywords,
                 summary: row.summary,
                 tags: [],
                 originalPath: row.originalPath,

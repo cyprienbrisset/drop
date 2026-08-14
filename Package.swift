@@ -75,7 +75,7 @@ let package = Package(
         ),
 
         // Application : menu bar, Drop Zone, Search, Préférences.
-        .executableTarget(name: "DropApp", dependencies: ["DropFeatures", "DropIntelligence"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .executableTarget(name: "DropApp", dependencies: ["DropFeatures", "DropIntelligence", "DropLicense"], swiftSettings: [.swiftLanguageMode(.v6)]),
 
         // Protocole de mesure pour les validations bloquantes de Phase 0 (DRO-16, DRO-17).
         // Exécutable séparé : ne fait pas partie du produit, jamais embarqué dans DropApp.

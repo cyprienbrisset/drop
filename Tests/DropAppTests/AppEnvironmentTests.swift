@@ -182,3 +182,49 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     let secondCheckTimestamp = try await lastVerifiedAt()
     #expect(secondCheckTimestamp == firstCheckTimestamp) // pas re-vérifié avant le délai hebdomadaire.
 }
+
+/// Preuve réelle du plafond gratuit (EF-81/82) : une fois 100 documents actifs atteints, un
+/// nouveau dépôt (le 101e) est refusé sans jamais toucher le coffre — pas seulement une
+/// vérification de `LicenseGate` isolée (déjà couverte dans `DropLicenseTests`), mais que
+/// `AppEnvironment.ingest` l'applique réellement avant d'appeler `IngestFiles`. 100 documents
+/// insérés directement en base (pas ingérés un par un : la vérification de stabilité EF-11
+/// rendrait ce test inutilement lent).
+@Test @MainActor func ingestionIsBlockedOnceTheFreeCapIsReached() async throws {
+    let environment = try makeEnvironment()
+
+    try await environment.indexDatabase.pool.write { db in
+        for index in 0..<100 {
+            let hash = "fake-hash-\(index)"
+            try db.execute(sql: "INSERT INTO blobs (hash, size_bytes, stored_at) VALUES (?, 0, '2026-01-01T00:00:00Z')", arguments: [hash])
+            try db.execute(
+                sql: """
+                INSERT INTO documents (id, blob_hash, display_name, original_filename, size_bytes, added_at, source)
+                VALUES (?, ?, ?, ?, 0, '2026-01-01T00:00:00Z', 'drop')
+                """,
+                arguments: ["doc-\(index)", hash, "doc-\(index).txt", "doc-\(index).txt"]
+            )
+        }
+    }
+
+    let source = try writeSourceFile(named: "cent-et-unième.txt", contents: "Ce document ne devrait jamais entrer dans le coffre")
+    environment.handleDrop(of: [source])
+
+    // Le rejet est synchrone (avant toute attente de stabilité EF-11), mais sous forte contention
+    // (suite complète en parallèle) le `Task` détaché par `handleDrop` peut être retardé — on
+    // sonde plutôt qu'un délai fixe, qui serait soit trop court, soit inutilement long.
+    let deadline = Date().addingTimeInterval(10)
+    while Date() < deadline, environment.dropZoneState == .idle {
+        try await Task.sleep(for: .milliseconds(100))
+    }
+
+    if case .failure(_, let message) = environment.dropZoneState {
+        #expect(message.contains("100"))
+    } else {
+        Issue.record("dropZoneState devrait être .failure, était \(environment.dropZoneState)")
+    }
+
+    let documentCount: Int = try await environment.indexDatabase.pool.read { db in
+        try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM documents") ?? 0
+    }
+    #expect(documentCount == 100) // le 101e (celui du test) n'a jamais été créé.
+}

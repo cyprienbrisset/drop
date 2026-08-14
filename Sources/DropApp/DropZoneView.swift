@@ -91,6 +91,7 @@ struct DropZoneView: View {
         case .success: return "checkmark.circle.fill"
         case .duplicate: return "doc.on.doc"
         case .failure: return "exclamationmark.triangle.fill"
+        case .reminder: return "info.circle.fill"
         }
     }
 
@@ -98,7 +99,7 @@ struct DropZoneView: View {
         switch environment.dropZoneState {
         case .idle, .hovering, .ingesting: return .secondary
         case .success: return .green
-        case .duplicate: return .orange
+        case .duplicate, .reminder: return .orange
         case .failure: return .red
         }
     }
@@ -111,6 +112,7 @@ struct DropZoneView: View {
         case .success(let name): return "« \(name) » ajouté au coffre"
         case .duplicate(let name): return "« \(name) » est déjà dans le coffre"
         case .failure(let name, let message): return "« \(name) » : \(message)"
+        case .reminder(let message): return message
         }
     }
 }
