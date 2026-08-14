@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import DropCore
 import DropFeatures
 import SwiftUI
 
@@ -9,7 +10,8 @@ import SwiftUI
 /// l'icône elle-même, seulement sur le contenu d'un popover déjà ouvert.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let environment: AppEnvironment
+    private(set) var environment: AppEnvironment
+    private let vaultRegistry: VaultRegistry
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
@@ -29,7 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) private static var lockFileDescriptor: Int32 = -1
 
     override init() {
-        let vaultRoot = AppEnvironment.defaultVaultLocation
+        // §5, backlog V3 : plusieurs coffres chiffrés séparément peuvent être connus de cette
+        // machine ; celui qui rouvre au lancement est le dernier actif, jamais silencieusement
+        // remis au coffre par défaut si l'utilisateur en a choisi un autre lors d'une session
+        // précédente.
+        let registry = VaultRegistry()
+        let defaultRoot = AppEnvironment.defaultVaultLocation
+        let activeDescriptor = registry.activeVaultID
+            .flatMap { id in registry.listVaults().first { $0.id == id } }
+            ?? registry.ensureDefaultVaultRegistered(name: "Coffre principal", path: defaultRoot.path)
+        let vaultRoot = URL(fileURLWithPath: activeDescriptor.path)
 
         // ENF-34 : une deuxième instance ne doit jamais ouvrir le même coffre en parallèle de la
         // première — elle s'arrête immédiatement, avant tout accès disque partagé (index.db,
@@ -43,13 +54,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ne peut de toute façon rien faire — ENF-31/32 (page d'erreur dédiée) reste à construire
         // (DRO-49). Échouer bruyamment ici est plus honnête que continuer à moitié fonctionnel.
         environment = try! AppEnvironment(vaultRoot: vaultRoot)
+        vaultRegistry = registry
         super.init()
     }
 
     /// `flock` non bloquant sur un fichier dédié dans le coffre : la primitive standard pour un
     /// verrou mono-instance sur un même volume. En cas de doute sur le verrou lui-même (dossier
     /// pas encore créé, permissions), on n'empêche jamais le lancement — seule une seconde
-    /// instance authentiquement détectée doit s'arrêter.
+    /// instance authentiquement détectée doit s'arrêter. Rappelée lors d'un changement de coffre
+    /// (§switchVault) : le verrou précédent est alors relâché avant de poser le nouveau, jamais
+    /// les deux à la fois.
     private static func acquireSingleInstanceLock(vaultRoot: URL) -> Bool {
         try? FileManager.default.createDirectory(at: vaultRoot, withIntermediateDirectories: true)
         let lockPath = vaultRoot.appendingPathComponent(".drop.lock").path
@@ -59,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             close(descriptor)
             return false
         }
+        if lockFileDescriptor >= 0 { close(lockFileDescriptor) }
         lockFileDescriptor = descriptor
         return true
     }
@@ -151,16 +166,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.close()
         NSApp.activate(ignoringOtherApps: true)
 
+        // Reconstruite à chaque ouverture plutôt que mise en cache : la liste des coffres peut
+        // avoir changé (création, bascule) depuis la dernière fermeture de cette fenêtre.
+        let hosting = NSHostingController(
+            rootView: PreferencesView(
+                environment: environment, vaults: vaultRegistry.listVaults(), activeVaultID: vaultRegistry.activeVaultID,
+                onCreateVault: { [weak self] in self?.createNewVault() },
+                onSwitchVault: { [weak self] descriptor in self?.switchVault(to: descriptor) }
+            )
+        )
         if preferencesWindow == nil {
-            let hosting = NSHostingController(rootView: PreferencesView(environment: environment))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Préférences"
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.isReleasedWhenClosed = false
             preferencesWindow = window
+        } else {
+            preferencesWindow?.contentViewController = hosting
         }
         preferencesWindow?.center()
         preferencesWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// §5, backlog V3 : ouvre un dossier vide ou déjà utilisé comme coffre, l'enregistre dans le
+    /// registre puis y bascule immédiatement — jamais deux étapes séparées qui laisseraient un
+    /// coffre enregistré mais jamais ouvert.
+    private func createNewVault() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choisir"
+        panel.message = "Choisissez ou créez un dossier pour le nouveau coffre"
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        let nameAlert = NSAlert()
+        nameAlert.messageText = "Nommez ce coffre"
+        nameAlert.informativeText = "Ce nom n'apparaît que dans Drop, jamais sur le disque."
+        nameAlert.addButton(withTitle: "Créer")
+        nameAlert.addButton(withTitle: "Annuler")
+        let nameField = NSTextField(string: folder.lastPathComponent)
+        nameField.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        nameAlert.accessoryView = nameField
+        guard nameAlert.runModal() == .alertFirstButtonReturn else { return }
+
+        let trimmedName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let descriptor = vaultRegistry.registerVault(
+            name: trimmedName.isEmpty ? folder.lastPathComponent : trimmedName, path: folder.path
+        )
+        switchVault(to: descriptor)
+    }
+
+    /// §5, backlog V3 : reconstruit `environment` contre un autre coffre et referme les fenêtres
+    /// liées à l'ancien — leur état (résultats de recherche, corbeille chargée…) appartient au
+    /// coffre qui vient de se refermer, jamais à celui qui s'ouvre.
+    private func switchVault(to descriptor: VaultDescriptor) {
+        guard descriptor.path != environment.vaultRoot.path else { return }
+
+        let newRoot = URL(fileURLWithPath: descriptor.path)
+        guard Self.acquireSingleInstanceLock(vaultRoot: newRoot), let newEnvironment = try? AppEnvironment(vaultRoot: newRoot) else {
+            let alert = NSAlert()
+            alert.messageText = "Impossible d'ouvrir ce coffre"
+            alert.informativeText = "« \(descriptor.path) » n'est peut-être plus accessible, ou déjà ouvert par une autre instance de Drop."
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
+
+        popover?.close()
+        searchWindow?.close(); searchWindow = nil
+        trashWindow?.close(); trashWindow = nil
+        preferencesWindow?.close(); preferencesWindow = nil
+
+        environment = newEnvironment
+        vaultRegistry.setActiveVault(id: descriptor.id)
+        setUpPopover()
     }
 
     func openTrashWindow() {

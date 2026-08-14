@@ -1,3 +1,4 @@
+import DropCore
 import DropFeatures
 import DropLicense
 import SwiftUI
@@ -9,6 +10,10 @@ import SwiftUI
 /// plutôt que proposer une action qui ne ferait rien.
 struct PreferencesView: View {
     let environment: AppEnvironment
+    var vaults: [VaultDescriptor] = []
+    var activeVaultID: String?
+    var onCreateVault: () -> Void = {}
+    var onSwitchVault: (VaultDescriptor) -> Void = { _ in }
 
     @State private var budget = VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
     @State private var documentCount = 0
@@ -30,6 +35,33 @@ struct PreferencesView: View {
             Section("Emplacement du coffre") {
                 LabeledContent("Dossier actuel", value: environment.vaultRoot.path)
                 Button("Importer un coffre existant…") { environment.importVault() }
+            }
+
+            Section("Coffres") {
+                Text("Chaque coffre a sa propre clé de chiffrement — les basculer ne partage jamais rien entre eux.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(vaults) { vault in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(vault.name)
+                            Text(vault.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if vault.id == activeVaultID {
+                            Text("Actif")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button("Basculer") { onSwitchVault(vault) }
+                        }
+                    }
+                }
+
+                Button("Nouveau coffre…", action: onCreateVault)
             }
 
             Section("Licence") {
