@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import DropFeatures
 import SwiftUI
 
@@ -23,12 +24,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let globalShortcutDescription = "⌥ Espace"
     private static let hasCompletedOnboardingKey = "hasCompletedOnboarding"
 
+    /// Descripteur du verrou mono-instance (ENF-34) — jamais fermé pendant que l'app tourne :
+    /// le fermer relâcherait le verrou. La sortie du processus le relâche naturellement.
+    nonisolated(unsafe) private static var lockFileDescriptor: Int32 = -1
+
     override init() {
+        let vaultRoot = AppEnvironment.defaultVaultLocation
+
+        // ENF-34 : une deuxième instance ne doit jamais ouvrir le même coffre en parallèle de la
+        // première — elle s'arrête immédiatement, avant tout accès disque partagé (index.db,
+        // vectors.db). Vérifié avant même de construire `AppEnvironment`.
+        guard Self.acquireSingleInstanceLock(vaultRoot: vaultRoot) else {
+            FileHandle.standardError.write(Data("Drop est déjà lancé — cette instance s'arrête.\n".utf8))
+            exit(0)
+        }
+
         // `try!` assumé : si le coffre ne peut pas être créé (permissions, disque plein), l'app
         // ne peut de toute façon rien faire — ENF-31/32 (page d'erreur dédiée) reste à construire
         // (DRO-49). Échouer bruyamment ici est plus honnête que continuer à moitié fonctionnel.
-        environment = try! AppEnvironment(vaultRoot: AppEnvironment.defaultVaultLocation)
+        environment = try! AppEnvironment(vaultRoot: vaultRoot)
         super.init()
+    }
+
+    /// `flock` non bloquant sur un fichier dédié dans le coffre : la primitive standard pour un
+    /// verrou mono-instance sur un même volume. En cas de doute sur le verrou lui-même (dossier
+    /// pas encore créé, permissions), on n'empêche jamais le lancement — seule une seconde
+    /// instance authentiquement détectée doit s'arrêter.
+    private static func acquireSingleInstanceLock(vaultRoot: URL) -> Bool {
+        try? FileManager.default.createDirectory(at: vaultRoot, withIntermediateDirectories: true)
+        let lockPath = vaultRoot.appendingPathComponent(".drop.lock").path
+        let descriptor = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        guard descriptor >= 0 else { return true }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            return false
+        }
+        lockFileDescriptor = descriptor
+        return true
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
