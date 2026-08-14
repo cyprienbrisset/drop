@@ -45,6 +45,7 @@ final class AppEnvironment {
     private let correctDocument: CorrectDocument
     private let manageTags: ManageTags
     private let verifyVaultIntegrity: VerifyVaultIntegrity
+    private let importVaultUseCase: ImportVault
     private let queryParser = QueryParser()
 
     /// Cadence de la boucle d'entretien (purge de la corbeille échue, EF-23) — la vérification
@@ -93,6 +94,7 @@ final class AppEnvironment {
         self.correctDocument = CorrectDocument(database: indexDatabase)
         self.manageTags = ManageTags(database: indexDatabase)
         self.verifyVaultIntegrity = VerifyVaultIntegrity(database: indexDatabase, vault: vault)
+        self.importVaultUseCase = ImportVault(vault: vault, database: indexDatabase)
         self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
         Task { await self.jobWorker.start() }
         Task { await self.runMaintenanceLoop() }
@@ -416,6 +418,41 @@ final class AppEnvironment {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         Task { try? await exportDocuments.exportSingle(documentID: result.id, toFolder: folder) }
+    }
+
+    /// Import assisté d'un coffre existant (Q-08, DRO-85) : choix du dossier racine du coffre
+    /// source via un panneau système, puis fusion des blobs pas encore connus dans le coffre
+    /// courant — jamais de tentative de transfert de la clé Keychain source (§4.1, la clé Mode
+    /// Standard reste propre à cette machine).
+    func importVault() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Importer"
+        panel.message = "Choisissez le dossier racine du coffre Drop à importer"
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let sourceRoot = panel.url else { return }
+
+        Task {
+            let alert = NSAlert()
+            do {
+                let report = try await importVaultUseCase.importVault(from: sourceRoot)
+                for documentID in report.importedDocumentIDs {
+                    _ = try? await jobQueue.enqueue(documentID: documentID, kind: .extract)
+                }
+                alert.messageText = "Import terminé"
+                alert.informativeText = report.importedDocumentIDs.isEmpty
+                    ? "Aucun nouveau document : tout le contenu de ce coffre était déjà présent."
+                    : "\(report.importedDocumentIDs.count) document(s) importé(s), \(report.skippedAlreadyPresentCount) déjà présent(s) et ignoré(s)."
+            } catch {
+                alert.messageText = "Import impossible"
+                alert.informativeText = "Le dossier choisi ne semble pas être un coffre Drop valide."
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
     }
 
     // MARK: - Corrections (EF-48)

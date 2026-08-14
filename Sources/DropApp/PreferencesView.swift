@@ -17,6 +17,7 @@ struct PreferencesView: View {
         Form {
             Section("Emplacement du coffre") {
                 LabeledContent("Dossier actuel", value: environment.vaultRoot.path)
+                Button("Importer un coffre existant…") { environment.importVault() }
             }
 
             Section("Licence") {
