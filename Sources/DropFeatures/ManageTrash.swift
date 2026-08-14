@@ -84,6 +84,8 @@ public struct ManageTrash: Sendable {
                 let blobHash: String = row["blob_hash"]
 
                 try db.execute(sql: "DELETE FROM documents WHERE id = ?", arguments: [documentID])
+                try db.execute(sql: "DELETE FROM fts_docs WHERE document_id = ?", arguments: [documentID])
+                try db.execute(sql: "DELETE FROM fts_trigram WHERE document_id = ?", arguments: [documentID])
 
                 let remainingReferences = try Int.fetchOne(
                     db, sql: "SELECT COUNT(*) FROM documents WHERE blob_hash = ?", arguments: [blobHash]

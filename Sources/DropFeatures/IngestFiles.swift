@@ -101,6 +101,19 @@ public struct IngestFiles: Sendable {
                     ]
                 )
 
+                // EF-40 : le document est cherchable sur ses métadonnées dès l'ingestion — le
+                // corps, l'émetteur et les mots-clés restent vides jusqu'à l'enrichissement
+                // (Phase 3+). Sans cette ligne, `fts_docs`/`fts_trigram` ne referraient jamais ce
+                // document tant que le pipeline d'analyse n'est pas passé.
+                try db.execute(
+                    sql: "INSERT INTO fts_docs (display_name, body, issuer, keywords, document_id) VALUES (?, '', '', '', ?)",
+                    arguments: [displayName, documentID]
+                )
+                try db.execute(
+                    sql: "INSERT INTO fts_trigram (term, document_id) VALUES (?, ?)",
+                    arguments: [displayName, documentID]
+                )
+
                 return .created(documentID: documentID)
             }
         } catch let ingestionError as IngestionError {
