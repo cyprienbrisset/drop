@@ -6,9 +6,12 @@ import Foundation
 struct DocumentSearchResult: Identifiable, Sendable, Equatable {
     let id: String
     let displayName: String
-    let docType: String?
-    let issuer: String?
-    let effectiveDate: Date?
+    // Correctibles par l'utilisateur (EF-48) : `var` pour permettre à `AppEnvironment` de
+    // refléter une correction immédiatement dans `searchResults`/`detailResult`, sans nouvelle
+    // recherche complète.
+    var docType: String?
+    var issuer: String?
+    var effectiveDate: Date?
     let amount: Double?
     let keywords: [String]
     let summary: String?

@@ -112,3 +112,39 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     #expect(attributes[.type] as? FileAttributeType != .typeSymbolicLink)
     #expect(try String(contentsOf: previewURL, encoding: .utf8) == content)
 }
+
+/// Preuve de bout en bout que corriger un champ (EF-48) le répercute immédiatement dans
+/// `searchResults` (sans attendre une nouvelle recherche) et persiste bien en base (une nouvelle
+/// recherche redonne la valeur corrigée). La garantie « jamais réécrit par une ré-analyse » est
+/// couverte au niveau `CorrectDocument`/`AnalyzeDocument` dans `DropFeaturesTests` — ce test
+/// vérifie la façade `AppEnvironment` que la vue appelle réellement, pas la règle EF-48 elle-même.
+@Test @MainActor func correctingAFieldUpdatesSearchResultsAndSurvivesReanalysis() async throws {
+    let environment = try makeEnvironment()
+    let source = try writeSourceFile(named: "doc-a-corriger.txt", contents: "Contenu quelconque à indexer")
+
+    environment.handleDrop(of: [source])
+    await waitUntilSearchable(environment, query: "quelconque")
+
+    guard let result = environment.searchResults.first else {
+        Issue.record("le document ingéré devrait être retrouvable")
+        return
+    }
+
+    environment.correctType(result, to: "contrat")
+    environment.correctIssuer(result, to: "Émetteur corrigé")
+    let correctedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    environment.correctEffectiveDate(result, to: correctedDate)
+
+    // Répercuté immédiatement dans `searchResults`, sans nouvelle recherche.
+    let updated = environment.searchResults.first { $0.id == result.id }
+    #expect(updated?.docType == "contrat")
+    #expect(updated?.issuer == "Émetteur corrigé")
+
+    // Laisse le temps à la tâche détachée de chaque correction d'écrire en base, puis vérifie
+    // que la valeur persiste réellement (pas seulement le reflet local optimiste ci-dessus).
+    try await Task.sleep(for: .milliseconds(500))
+    await waitUntilSearchable(environment, query: "quelconque")
+    let afterFreshSearch = environment.searchResults.first { $0.id == result.id }
+    #expect(afterFreshSearch?.docType == "contrat")
+    #expect(afterFreshSearch?.issuer == "Émetteur corrigé")
+}

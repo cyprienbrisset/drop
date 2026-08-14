@@ -39,6 +39,7 @@ final class AppEnvironment {
     let exportDocuments: ExportDocuments
     private let jobQueue: JobQueue
     private let jobWorker: JobWorker
+    private let correctDocument: CorrectDocument
     private let queryParser = QueryParser()
 
     var dropZoneState: DropZoneState = .idle
@@ -79,6 +80,7 @@ final class AppEnvironment {
         self.manageTrash = ManageTrash(vault: vault, database: indexDatabase)
         self.exportDocuments = ExportDocuments(vault: vault, database: indexDatabase)
         self.jobQueue = JobQueue(database: indexDatabase)
+        self.correctDocument = CorrectDocument(database: indexDatabase)
         self.jobWorker = JobWorker(jobQueue: jobQueue, analyzeDocument: analyzeDocument)
         Task { await self.jobWorker.start() }
     }
@@ -255,6 +257,38 @@ final class AppEnvironment {
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         Task { try? await exportDocuments.exportSingle(documentID: result.id, toFolder: folder) }
     }
+
+    // MARK: - Corrections (EF-48)
+
+    /// Corrige le type ; verrouille définitivement le champ contre toute réécriture automatique
+    /// (`user_verified`, §4.4) et répercute le changement dans les vues déjà chargées.
+    func correctType(_ result: DocumentSearchResult, to docType: String) {
+        Task { try? await correctDocument.correctType(documentID: result.id, to: docType) }
+        applyLocalCorrection(documentID: result.id) { $0.docType = docType }
+    }
+
+    func correctIssuer(_ result: DocumentSearchResult, to issuer: String) {
+        Task { try? await correctDocument.correctIssuer(documentID: result.id, to: issuer) }
+        applyLocalCorrection(documentID: result.id) { $0.issuer = issuer }
+    }
+
+    func correctEffectiveDate(_ result: DocumentSearchResult, to date: Date) {
+        let dayString = Self.isoDayFormatter.string(from: date)
+        Task { try? await correctDocument.correctEffectiveDate(documentID: result.id, to: dayString) }
+        applyLocalCorrection(documentID: result.id) { $0.effectiveDate = date }
+    }
+
+    private func applyLocalCorrection(documentID: String, mutate: (inout DocumentSearchResult) -> Void) {
+        guard let index = searchResults.firstIndex(where: { $0.id == documentID }) else { return }
+        mutate(&searchResults[index])
+    }
+
+    private static let isoDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
 
     // MARK: - Corbeille (EF-23, §5.9)
 

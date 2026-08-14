@@ -1,3 +1,4 @@
+import DropIntelligence
 import QuickLook
 import SwiftUI
 
@@ -11,8 +12,15 @@ struct DocumentDetailView: View {
     var onReveal: () -> Void = {}
     var onExport: () -> Void = {}
     var onRemove: () -> Void = {}
+    var onCorrectType: (String) -> Void = { _ in }
+    var onCorrectIssuer: (String) -> Void = { _ in }
+    var onCorrectEffectiveDate: (Date) -> Void = { _ in }
 
     @State private var quickLookURL: URL?
+    @State private var isCorrecting = false
+    @State private var editedTypeRawValue: String = DocumentType.autre.rawValue
+    @State private var editedIssuer: String = ""
+    @State private var editedDate: Date = .now
 
     var body: some View {
         ScrollView {
@@ -20,6 +28,10 @@ struct DocumentDetailView: View {
                 header
                 Divider()
                 fields
+                if isCorrecting {
+                    Divider()
+                    correctionForm
+                }
                 Divider()
                 actions
             }
@@ -76,6 +88,43 @@ struct DocumentDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// EF-48 : une correction verrouille définitivement le champ contre toute réécriture
+    /// automatique ultérieure — jamais discrète, toujours un geste explicite de l'utilisateur.
+    private var correctionForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Corriger")
+                .font(.headline)
+
+            Picker("Type", selection: $editedTypeRawValue) {
+                ForEach(DocumentType.allCases, id: \.rawValue) { type in
+                    Text(type.rawValue).tag(type.rawValue)
+                }
+            }
+            TextField("Émetteur", text: $editedIssuer)
+                .textFieldStyle(.roundedBorder)
+            DatePicker("Date", selection: $editedDate, displayedComponents: .date)
+
+            HStack {
+                Spacer()
+                Button("Annuler") { isCorrecting = false }
+                Button("Valider") {
+                    onCorrectType(editedTypeRawValue)
+                    if !editedIssuer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        onCorrectIssuer(editedIssuer)
+                    }
+                    onCorrectEffectiveDate(editedDate)
+                    isCorrecting = false
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .onAppear {
+            editedTypeRawValue = result.docType ?? DocumentType.autre.rawValue
+            editedIssuer = result.issuer ?? ""
+            editedDate = result.effectiveDate ?? .now
+        }
+    }
+
     private var actions: some View {
         HStack(spacing: 8) {
             Button("Ouvrir") { onOpen() }
@@ -83,6 +132,7 @@ struct DocumentDetailView: View {
                 .disabled(result.previewURL == nil)
             Button("Révéler dans le Finder") { onReveal() }
             Button("Exporter…") { onExport() }
+            Button(isCorrecting ? "Fermer la correction" : "Corriger…") { isCorrecting.toggle() }
             Spacer()
             Button("Retirer du coffre", role: .destructive) { onRemove() }
         }

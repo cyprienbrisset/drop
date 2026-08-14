@@ -98,6 +98,18 @@ struct SearchView: View {
                 onRemove: {
                     environment.remove(result)
                     detailResult = nil
+                },
+                onCorrectType: { newType in
+                    environment.correctType(result, to: newType)
+                    detailResult?.docType = newType
+                },
+                onCorrectIssuer: { newIssuer in
+                    environment.correctIssuer(result, to: newIssuer)
+                    detailResult?.issuer = newIssuer
+                },
+                onCorrectEffectiveDate: { newDate in
+                    environment.correctEffectiveDate(result, to: newDate)
+                    detailResult?.effectiveDate = newDate
                 }
             )
         }
