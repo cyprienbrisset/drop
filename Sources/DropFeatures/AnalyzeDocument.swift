@@ -85,17 +85,26 @@ public struct AnalyzeDocument: Sendable {
                 )
             }
 
+            // EF-48 : un champ dont le bit `user_verified` est posé n'est plus jamais réécrit par
+            // le pipeline (§4.4 — masque type=1, issuer=2, effectiveDate=4).
             try db.execute(
                 sql: """
-                UPDATE documents SET issuer = ?, effective_date = ?, effective_date_src = ?, analysis_state = 'done'
-                WHERE id = ? AND user_verified = 0
+                UPDATE documents SET
+                    issuer = CASE WHEN (user_verified & 2) = 0 THEN ? ELSE issuer END,
+                    effective_date = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date END,
+                    effective_date_src = CASE WHEN (user_verified & 4) = 0 THEN ? ELSE effective_date_src END,
+                    analysis_state = 'done'
+                WHERE id = ?
                 """,
                 arguments: [issuer, effectiveDate?.date, effectiveDate?.source.rawValue, documentID]
             )
 
+            // Reflète l'émetteur réellement retenu (celui du pipeline, ou celui conservé si
+            // l'utilisateur l'a corrigé) — jamais une valeur qu'EF-48 vient d'écarter ci-dessus.
+            let retainedIssuer: String? = try String.fetchOne(db, sql: "SELECT issuer FROM documents WHERE id = ?", arguments: [documentID])
             try db.execute(
                 sql: "UPDATE fts_docs SET body = ?, issuer = ? WHERE document_id = ?",
-                arguments: [fullText, issuer ?? "", documentID]
+                arguments: [fullText, retainedIssuer ?? "", documentID]
             )
         }
     }
