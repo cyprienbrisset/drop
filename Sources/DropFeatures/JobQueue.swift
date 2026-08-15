@@ -54,7 +54,13 @@ public struct JobQueue: Sendable {
                 return nil
             }
             let jobID: Int64 = row["id"]
-            try db.execute(sql: "UPDATE jobs SET state = 'running', updated_at = ? WHERE id = ?", arguments: [now, jobID])
+            // `started_at` n'est posé qu'une seule fois par travail, via `COALESCE`
+            // (§ComputeVaultStats) — une reprise après échec (`fail` → nouveau passage par
+            // `dequeueNext`) le réécrirait sinon à chaque tentative, biaisant la durée mesurée.
+            try db.execute(
+                sql: "UPDATE jobs SET state = 'running', updated_at = ?, started_at = COALESCE(started_at, ?) WHERE id = ?",
+                arguments: [now, now, jobID]
+            )
             return Self.job(fromRow: row, overridingState: .running)
         }
     }

@@ -37,6 +37,9 @@ public struct DropIndexDatabase: Sendable {
         migrator.registerMigration("v3_add_automation_rules") { db in
             try createV3AddAutomationRules(db)
         }
+        migrator.registerMigration("v4_add_job_started_at") { db in
+            try createV4AddJobStartedAt(db)
+        }
         return migrator
     }
 }

@@ -48,6 +48,7 @@ final class AppEnvironment {
     private let importVaultUseCase: ImportVault
     private let scheduleReminders: ScheduleReminders
     private let automationRules: AutomationRules
+    private let computeVaultStats: ComputeVaultStats
     private let queryParser = QueryParser()
 
     /// Cadence de la boucle d'entretien (purge de la corbeille échue, EF-23) — la vérification
@@ -66,6 +67,9 @@ final class AppEnvironment {
     /// des dizaines en attente pendant plusieurs minutes ; sans indicateur, rien à l'écran ne le
     /// distingue d'un dépôt qui n'aurait simplement rien fait.
     private(set) var pendingAnalysisCount = 0
+    /// Total des documents actifs, tenu à jour par le même sondage — permet d'afficher
+    /// « \(traités)/\(total) » plutôt qu'un simple compte de restants (§EX-08).
+    private(set) var totalDocumentCount = 0
     /// Notifié uniquement sur un changement d'état (a-t-on commencé/fini de traiter un lot),
     /// jamais à chaque tick de sondage — c'est `AppDelegate` qui décide quoi en faire (ici,
     /// animer l'icône de la barre de menus, elle-même hors du monde SwiftUI observable).
@@ -110,6 +114,7 @@ final class AppEnvironment {
         self.importVaultUseCase = ImportVault(vault: vault, database: indexDatabase)
         self.scheduleReminders = ScheduleReminders(database: indexDatabase, scheduler: SystemNotificationScheduler())
         self.automationRules = AutomationRules(database: indexDatabase, manageTags: manageTags)
+        self.computeVaultStats = ComputeVaultStats(database: indexDatabase)
         self.jobWorker = JobWorker(
             jobQueue: jobQueue, analyzeDocument: analyzeDocument, scheduleReminders: scheduleReminders,
             automationRules: automationRules
@@ -128,6 +133,7 @@ final class AppEnvironment {
         while !Task.isCancelled {
             let count = (try? await jobQueue.pendingCount()) ?? 0
             pendingAnalysisCount = count
+            totalDocumentCount = (try? await activeDocumentCount()) ?? totalDocumentCount
             let hasPending = count > 0
             if hasPending != lastReportedHadPending {
                 lastReportedHadPending = hasPending
@@ -599,5 +605,9 @@ final class AppEnvironment {
             vectorsPath: vectorsDatabase != nil ? vaultRoot.appendingPathComponent("vectors.db") : nil
         )
         return (try? await compute.compute()) ?? VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
+    }
+
+    func computeStats() async -> VaultStats {
+        (try? await computeVaultStats.compute()) ?? VaultStats(documentCount: 0, averageAnalysisSeconds: nil)
     }
 }

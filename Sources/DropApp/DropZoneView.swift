@@ -119,8 +119,9 @@ struct DropZoneView: View {
 
     private var statusText: String {
         if isShowingBacklog {
-            let count = environment.pendingAnalysisCount
-            return "\(count) document\(count > 1 ? "s" : "") en cours d'analyse…"
+            let total = environment.totalDocumentCount
+            let processed = max(total - environment.pendingAnalysisCount, 0)
+            return "\(processed)/\(total) documents traités…"
         }
         switch environment.dropZoneState {
         case .idle: return "Déposez un document ici"

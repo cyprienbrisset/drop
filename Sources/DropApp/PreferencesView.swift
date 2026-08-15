@@ -18,6 +18,7 @@ struct PreferencesView: View {
     @State private var budget = VaultBudget(vaultSizeBytes: 0, dedupSavingsBytes: 0, indexSizeBytes: 0, vectorsSizeBytes: 0)
     @State private var documentCount = 0
     @State private var remindersEnabled = false
+    @State private var stats = VaultStats(documentCount: 0, averageAnalysisSeconds: nil)
 
     private enum ConditionKind: String, CaseIterable, Identifiable {
         case issuerEquals = "Émetteur est"
@@ -121,6 +122,20 @@ struct PreferencesView: View {
                 .padding(.top, 4)
             }
 
+            Section("Statistiques") {
+                LabeledContent("Documents dans le coffre", value: "\(stats.documentCount)")
+                if environment.pendingAnalysisCount > 0 {
+                    LabeledContent("En cours d'analyse", value: "\(environment.pendingAnalysisCount)")
+                }
+                if let average = stats.averageAnalysisSeconds {
+                    LabeledContent("Temps de traitement moyen", value: Self.formatDuration(average))
+                } else {
+                    Text("Temps de traitement moyen : pas encore de mesure (aucune analyse terminée).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Budget disque") {
                 LabeledContent("Taille du coffre", value: Self.formatBytes(budget.vaultSizeBytes))
                 LabeledContent("Économie de déduplication", value: Self.formatBytes(budget.dedupSavingsBytes))
@@ -134,6 +149,7 @@ struct PreferencesView: View {
             budget = await environment.computeBudget()
             documentCount = (try? await environment.activeDocumentCount()) ?? 0
             remindersEnabled = await environment.remindersEnabled()
+            stats = await environment.computeStats()
             await environment.loadAutomationRules()
         }
     }
@@ -180,6 +196,12 @@ struct PreferencesView: View {
 
     private static func formatBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private static func formatDuration(_ seconds: Double) -> String {
+        seconds < 60
+            ? String(format: "%.0f s", seconds)
+            : String(format: "%d min %02d s", Int(seconds) / 60, Int(seconds) % 60)
     }
 }
 
