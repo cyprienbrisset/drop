@@ -107,6 +107,15 @@ public struct JobQueue: Sendable {
         }
     }
 
+    /// Nombre de travaux pas encore terminés (§5.8, EX-08) : sert à signaler à l'utilisateur
+    /// qu'une analyse est encore en cours après un dépôt massif — jamais l'inverse, un compte de
+    /// travaux déjà `done`/`failed` ne doit jamais compter comme « encore en attente ».
+    public func pendingCount() async throws -> Int {
+        try await database.pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs WHERE state IN ('queued', 'running')") ?? 0
+        }
+    }
+
     private static func job(fromRow row: Row, overridingState: JobState? = nil) -> Job {
         let stateRaw: String = row["state"]
         return Job(

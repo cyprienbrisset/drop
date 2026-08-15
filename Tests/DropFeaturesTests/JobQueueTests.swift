@@ -128,3 +128,26 @@ private func insertDocument(_ documentID: String, into database: DropIndexDataba
     let nothingLeft = try await queue.dequeueNext()
     #expect(nothingLeft == nil)
 }
+
+@Test func pendingCountReflectsQueuedAndRunningButNeverDoneOrFailed() async throws {
+    let (queue, database) = try makeQueue()
+    for id in ["doc-1", "doc-2", "doc-3", "doc-4"] {
+        try await insertDocument(id, into: database)
+        try await queue.enqueue(documentID: id, kind: .extract)
+    }
+    #expect(try await queue.pendingCount() == 4)
+
+    // doc-1 passe "running" (déqueué), doc-2 est complété, doc-3 échoue définitivement —
+    // seuls les deux encore réellement en attente (doc-1 running, doc-4 toujours queued)
+    // doivent compter.
+    let runningJob = try await queue.dequeueNext()!
+    let completedJob = try await queue.dequeueNext()!
+    try await queue.complete(jobID: completedJob.id!)
+    let failingJob = try await queue.dequeueNext()!
+    for _ in 0..<BackoffPolicy.maxAttempts {
+        try await queue.fail(jobID: failingJob.id!, error: "boom")
+    }
+
+    #expect(try await queue.pendingCount() == 2)
+    _ = runningJob
+}

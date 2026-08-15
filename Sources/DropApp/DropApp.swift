@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let vaultRegistry: VaultRegistry
 
     private var statusItem: NSStatusItem!
+    private var dropTargetView: DropTargetStatusView!
     private var popover: NSPopover!
     private var searchWindow: NSWindow?
     private var preferencesWindow: NSWindow?
@@ -85,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         setUpPopover()
         registerGlobalHotkey()
+        wirePendingAnalysisIndicator()
 
         if !UserDefaults.standard.bool(forKey: Self.hasCompletedOnboardingKey) {
             openOnboardingWindow()
@@ -118,6 +120,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.environment.handleDrop(of: urls)
         }
         statusItem.view = dragTarget
+        dropTargetView = dragTarget
+    }
+
+    /// §5.8/EX-08 : relie l'icône de la barre de menus à l'état réel de la file d'analyse — sans
+    /// second appel après une bascule de coffre (§switchVault), l'icône continuerait de refléter
+    /// la file du coffre précédent, jamais celle qui vient de s'ouvrir.
+    private func wirePendingAnalysisIndicator() {
+        environment.onPendingAnalysisChanged = { [weak self] hasPending in
+            self?.dropTargetView.setProcessing(hasPending)
+        }
     }
 
     private func setUpPopover() {
@@ -243,6 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment = newEnvironment
         vaultRegistry.setActiveVault(id: descriptor.id)
         setUpPopover()
+        dropTargetView.setProcessing(false)
+        wirePendingAnalysisIndicator()
     }
 
     func openTrashWindow() {

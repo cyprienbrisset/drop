@@ -47,6 +47,17 @@ final class DropTargetStatusView: NSView {
         onClick?()
     }
 
+    /// §5.8/EX-08 : signale visuellement qu'une analyse est encore en cours en arrière-plan — sans
+    /// cela, un dépôt massif (des dizaines de documents) paraît n'avoir rien fait pendant les
+    /// minutes que prend l'analyse réelle, alors que l'ingestion elle-même est instantanée.
+    func setProcessing(_ isProcessing: Bool) {
+        if isProcessing {
+            imageView.addSymbolEffect(.pulse, options: .repeating)
+        } else {
+            imageView.removeAllSymbolEffects()
+        }
+    }
+
     // MARK: - Accessibilité (DRO-50)
 
     /// `NSStatusItem.view` (voir le commentaire en tête de fichier) contourne

@@ -62,6 +62,16 @@ final class AppEnvironment {
     var trashedDocuments: [ManageTrash.TrashedDocument] = []
     var automationRuleList: [AutomationRules.Rule] = []
 
+    /// Nombre de documents pas encore analysés (§5.8, EX-08) — un dépôt massif peut en laisser
+    /// des dizaines en attente pendant plusieurs minutes ; sans indicateur, rien à l'écran ne le
+    /// distingue d'un dépôt qui n'aurait simplement rien fait.
+    private(set) var pendingAnalysisCount = 0
+    /// Notifié uniquement sur un changement d'état (a-t-on commencé/fini de traiter un lot),
+    /// jamais à chaque tick de sondage — c'est `AppDelegate` qui décide quoi en faire (ici,
+    /// animer l'icône de la barre de menus, elle-même hors du monde SwiftUI observable).
+    var onPendingAnalysisChanged: ((Bool) -> Void)?
+    private static let pendingAnalysisPollSeconds: Double = 2
+
     /// Emplacement par défaut (§EF-20) : Application Support, jamais iCloud Drive ni un dossier
     /// synchronisé — le choix d'un autre emplacement avec migration vérifiée reste à câbler.
     static var defaultVaultLocation: URL {
@@ -106,6 +116,25 @@ final class AppEnvironment {
         )
         Task { await self.jobWorker.start() }
         Task { await self.runMaintenanceLoop() }
+        Task { await self.runPendingAnalysisPoll() }
+    }
+
+    /// Sondage léger (`COUNT` indexé, §JobQueue.pendingCount) plutôt qu'un abonnement — la file
+    /// de travaux vit dans `index.db`, pas en mémoire partagée avec `JobWorker`, et un sondage à
+    /// 2 s reste largement sous le seuil de perception humaine sans jamais solliciter le modèle
+    /// de langage ni le disque de façon coûteuse.
+    private func runPendingAnalysisPoll() async {
+        var lastReportedHadPending = false
+        while !Task.isCancelled {
+            let count = (try? await jobQueue.pendingCount()) ?? 0
+            pendingAnalysisCount = count
+            let hasPending = count > 0
+            if hasPending != lastReportedHadPending {
+                lastReportedHadPending = hasPending
+                onPendingAnalysisChanged?(hasPending)
+            }
+            try? await Task.sleep(for: .seconds(Self.pendingAnalysisPollSeconds))
+        }
     }
 
     /// EF-28 : un schéma illisible ne doit jamais faire planter l'app au démarrage — le coffre

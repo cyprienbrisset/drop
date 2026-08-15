@@ -62,6 +62,32 @@ private func waitUntilSearchable(_ environment: AppEnvironment, query: String, t
     #expect(matches.count == 1)
 }
 
+/// EX-08 : un dépôt met un travail d'analyse en attente (§JobQueue.pendingCount), et
+/// `onPendingAnalysisChanged` doit le signaler — c'est ce signal qui anime l'icône de la barre de
+/// menus (`DropTargetStatusView.setProcessing`) pendant qu'un dépôt massif est encore en cours de
+/// traitement, jamais un état interne à `JobWorker` invisible depuis l'extérieur.
+@Test @MainActor func droppingAFileReportsPendingAnalysisThenClearsItOnceDone() async throws {
+    let environment = try makeEnvironment()
+    var observedTransitions: [Bool] = []
+    environment.onPendingAnalysisChanged = { hasPending in observedTransitions.append(hasPending) }
+
+    let source = try writeSourceFile(named: "facture-orange.txt", contents: "Facture Orange mobile juin 2026, montant 19,99 euros")
+    environment.handleDrop(of: [source])
+
+    let deadline = Date().addingTimeInterval(60)
+    while Date() < deadline, environment.pendingAnalysisCount == 0 {
+        try? await Task.sleep(for: .milliseconds(200))
+    }
+    #expect(environment.pendingAnalysisCount > 0)
+
+    while Date() < deadline, environment.pendingAnalysisCount > 0 {
+        try? await Task.sleep(for: .milliseconds(200))
+    }
+    #expect(environment.pendingAnalysisCount == 0)
+    #expect(observedTransitions.contains(true))
+    #expect(observedTransitions.last == false)
+}
+
 @Test @MainActor func searchingWithoutTextClearsResults() async throws {
     let environment = try makeEnvironment()
     let source = try writeSourceFile(named: "releve.txt", contents: "Relevé bancaire janvier")

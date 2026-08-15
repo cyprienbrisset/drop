@@ -44,6 +44,7 @@ struct DropZoneView: View {
                     .font(.system(size: 26))
                     .foregroundStyle(statusColor)
                     .symbolEffect(.bounce, value: environment.dropZoneState)
+                    .symbolEffect(.pulse, options: .repeating, isActive: isShowingBacklog)
                     .accessibilityHidden(true)
                 Text(statusText)
                     .font(.callout)
@@ -88,7 +89,15 @@ struct DropZoneView: View {
         }
     }
 
+    /// L'analyse en arrière-plan (§5.8) reste invisible tant qu'aucun autre événement de dépôt
+    /// n'occupe déjà la zone — un dépôt massif (des dizaines de documents) ne doit jamais laisser
+    /// croire que rien ne s'est passé simplement parce que l'ingestion, elle, est instantanée.
+    private var isShowingBacklog: Bool {
+        environment.dropZoneState == .idle && environment.pendingAnalysisCount > 0
+    }
+
     private var statusSymbol: String {
+        if isShowingBacklog { return "arrow.triangle.2.circlepath" }
         switch environment.dropZoneState {
         case .idle, .hovering: return "tray.and.arrow.down"
         case .ingesting: return "arrow.triangle.2.circlepath"
@@ -109,6 +118,10 @@ struct DropZoneView: View {
     }
 
     private var statusText: String {
+        if isShowingBacklog {
+            let count = environment.pendingAnalysisCount
+            return "\(count) document\(count > 1 ? "s" : "") en cours d'analyse…"
+        }
         switch environment.dropZoneState {
         case .idle: return "Déposez un document ici"
         case .hovering: return "Relâchez pour déposer"

@@ -46,6 +46,9 @@ case "corpus":
         ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!.appendingPathComponent("Drop-Demo-Corpus").path
     try runGenerateCorpus(outputPath: path)
 
+case "inspect":
+    try await runDropInspect()
+
 default:
     printUsage()
     exit(1)
