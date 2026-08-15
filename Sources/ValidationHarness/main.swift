@@ -7,6 +7,7 @@ import Foundation
 /// Usage :
 ///   swift run ValidationHarness a [--minutes N]   Validation A — inférence en arrière-plan
 ///   swift run ValidationHarness b                 Validation B — qualité des embeddings FR
+///   swift run ValidationHarness eval               drop-eval — recall@3 sur le corpus de référence (DRO-15/46)
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
@@ -27,6 +28,24 @@ case "a":
 case "b":
     try runValidationB()
 
+case "eval":
+    try await runDropEval()
+
+case "demo":
+    try await runDropDemo()
+
+case "import":
+    guard let path = arguments.dropFirst().first else {
+        print("Usage: swift run ValidationHarness import <dossier>")
+        exit(1)
+    }
+    try await runDropImportFolder(path: path)
+
+case "corpus":
+    let path = arguments.dropFirst().first
+        ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!.appendingPathComponent("Drop-Demo-Corpus").path
+    try runGenerateCorpus(outputPath: path)
+
 default:
     printUsage()
     exit(1)
@@ -37,5 +56,9 @@ func printUsage() {
     Usage:
       swift run ValidationHarness a [--minutes N]   Validation A — inférence en arrière-plan
       swift run ValidationHarness b                 Validation B — qualité des embeddings FR
+      swift run ValidationHarness eval               drop-eval — recall@3 sur le corpus de référence (DRO-15/46)
+      swift run ValidationHarness demo               drop-demo — peuple le vrai coffre par défaut avec un corpus de démonstration
+      swift run ValidationHarness import <dossier>   drop-import — ingère et analyse tous les fichiers d'un dossier dans le vrai coffre
+      swift run ValidationHarness corpus [dossier]   drop-corpus — génère ~100 PDF/XLSX/DOCX prêts à déposer soi-même (défaut : ~/Desktop/Drop-Demo-Corpus)
     """)
 }

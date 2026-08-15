@@ -77,9 +77,14 @@ let package = Package(
         // Application : menu bar, Drop Zone, Search, Préférences.
         .executableTarget(name: "DropApp", dependencies: ["DropFeatures", "DropIntelligence", "DropLicense"], swiftSettings: [.swiftLanguageMode(.v6)]),
 
-        // Protocole de mesure pour les validations bloquantes de Phase 0 (DRO-16, DRO-17).
-        // Exécutable séparé : ne fait pas partie du produit, jamais embarqué dans DropApp.
-        .executableTarget(name: "ValidationHarness", dependencies: ["DropCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        // Protocole de mesure pour les validations bloquantes de Phase 0 (DRO-16, DRO-17) et le
+        // harnais d'évaluation de la qualité de recherche (drop-eval, DRO-15/46). Exécutable
+        // séparé : ne fait partie du produit, jamais embarqué dans DropApp.
+        .executableTarget(
+            name: "ValidationHarness",
+            dependencies: ["DropCore", "DropFeatures", "DropVault", "DropIndex", "DropSearch", "DropEmbeddings"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
 
         // Tests — cibles prioritaires de couverture (§8.1) : DropCore, DropSearch, DropLicense.
         .testTarget(name: "DropCoreTests", dependencies: ["DropCore"]),

@@ -44,9 +44,41 @@ public struct LexicalCandidateGenerator: CandidateGenerator {
     /// recherché en préfixe (`*`, sur les index `prefix = '2 3 4'` du schéma, §4.4). Sans cela,
     /// un mot collé à l'extension par le tokenizer (ex. `edf.pdf` reste un seul token à cause du
     /// `.` dans `tokenchars`) ne matcherait jamais une requête sur le seul mot « edf ».
+    ///
+    /// Termes joints par `OR`, jamais l'espace nu (§ET implicite de FTS5, DRO-46) : une requête en
+    /// langage naturel comme « quel était mon solde en février » contient presque toujours un mot
+    /// absent du document (« mon », « était »...) — l'exiger en plus des mots qui comptent vraiment
+    /// (« solde », « février ») ferait échouer la recherche précisément quand elle est formulée le
+    /// plus naturellement. BM25 continue de classer un document qui matche plusieurs termes devant
+    /// celui qui n'en matche qu'un — l'assouplissement ne coûte rien en précision relative.
     static func ftsMatchExpression(for text: String) -> String {
-        text.split(separator: " ")
+        let allTerms = text.split(separator: " ").map(String.init)
+        // Les mots-outils français ne portent aucun signal discriminant et, combinés au préfixe
+        // (`*`), plusieurs correspondent par accident à des mots sans rapport de plusieurs
+        // caractères (« en »* trouve « engie », « entretien »...) — les retirer avant l'union
+        // laisse BM25 classer sur les mots qui comptent réellement. Une requête réduite à des
+        // mots-outils garde malgré tout tous ses termes plutôt que de chercher sur rien.
+        let significantTerms = allTerms.filter { !Self.isStopword($0) }
+        let terms = significantTerms.isEmpty ? allTerms : significantTerms
+
+        return terms
             .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"*" }
-            .joined(separator: " ")
+            .joined(separator: " OR ")
     }
+
+    private static func isStopword(_ term: String) -> Bool {
+        term.count < 2 || stopwords.contains(term.lowercased())
+    }
+
+    /// Mots-outils français les plus fréquents dans une requête tapée naturellement (articles,
+    /// pronoms, prépositions courtes, auxiliaires) — jamais exhaustif, seulement ceux qui posent
+    /// un vrai risque de faux positifs en préfixe sur un corpus de quelques mots.
+    private static let stopwords: Set<String> = [
+        "le", "la", "les", "l", "un", "une", "des", "de", "du", "d", "et", "ou", "à", "au", "aux",
+        "en", "je", "j", "j'ai", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles",
+        "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+        "notre", "votre", "leur", "leurs", "que", "qu", "qui", "quoi", "où", "dont",
+        "est", "suis", "es", "sont", "était", "étais", "ai", "as", "a", "avons", "avez", "ont",
+        "pour", "par", "avec", "sans", "sur", "dans", "combien", "comment", "pourquoi", "quel", "quelle",
+    ]
 }
