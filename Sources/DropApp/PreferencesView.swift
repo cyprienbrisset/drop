@@ -144,7 +144,7 @@ struct PreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 300)
+        .frame(minWidth: 760, minHeight: 640)
         .task {
             budget = await environment.computeBudget()
             documentCount = (try? await environment.activeDocumentCount()) ?? 0

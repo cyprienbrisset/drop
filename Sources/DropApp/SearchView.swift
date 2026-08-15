@@ -71,7 +71,7 @@ struct SearchView: View {
                 .listStyle(.plain)
             }
         }
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 860, minHeight: 640)
         .task(id: queryText) {
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }

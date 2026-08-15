@@ -42,7 +42,7 @@ struct DocumentDetailView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 380, minHeight: 420)
+        .frame(minWidth: 640, minHeight: 700)
         .quickLookPreview($quickLookURL)
     }
 
