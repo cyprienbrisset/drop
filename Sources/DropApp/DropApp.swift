@@ -165,8 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if searchWindow == nil {
             let hosting = NSHostingController(rootView: SearchView(environment: environment))
             let window = NSWindow(contentViewController: hosting)
+            // Palette de recherche façon Spotlight (§EX-02) : jamais réduite dans le Dock — ni
+            // Spotlight, ni Alfred, ni Raycast ne le permettent — et sans titre visible, seule la
+            // barre de recherche elle-même occupe le haut de la fenêtre.
             window.title = "Rechercher"
-            window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false
             searchWindow = window
         }

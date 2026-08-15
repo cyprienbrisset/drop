@@ -31,7 +31,28 @@ struct PreferencesView: View {
     @State private var newRuleConditionValue = ""
     @State private var newRuleActionTag = ""
 
+    // Fenêtre de préférences à volets (§HIG macOS : System Settings, Mail, Xcode…) plutôt qu'un
+    // unique formulaire qui défile — sept sections d'un coup n'orientaient plus nulle part.
+    // `TabView` avec `Tab(_:systemImage:)` rend nativement la barre d'icônes de la barre d'outils
+    // sur macOS, sans configuration supplémentaire.
     var body: some View {
+        TabView {
+            Tab("Général", systemImage: "gearshape") { generalPane }
+            Tab("Rappels", systemImage: "bell") { remindersPane }
+            Tab("Automatisation", systemImage: "wand.and.stars") { automationPane }
+            Tab("Stockage", systemImage: "internaldrive") { storagePane }
+        }
+        .frame(minWidth: 760, minHeight: 640)
+        .task {
+            budget = await environment.computeBudget()
+            documentCount = (try? await environment.activeDocumentCount()) ?? 0
+            remindersEnabled = await environment.remindersEnabled()
+            stats = await environment.computeStats()
+            await environment.loadAutomationRules()
+        }
+    }
+
+    private var generalPane: some View {
         Form {
             Section("Emplacement du coffre") {
                 LabeledContent("Dossier actuel", value: environment.vaultRoot.path)
@@ -73,7 +94,12 @@ struct PreferencesView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var remindersPane: some View {
+        Form {
             Section("Rappels d'échéance") {
                 Toggle("Me rappeler des échéances détectées", isOn: $remindersEnabled)
                     .onChange(of: remindersEnabled) { _, newValue in environment.setRemindersEnabled(newValue) }
@@ -81,7 +107,12 @@ struct PreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var automationPane: some View {
+        Form {
             Section("Automatisation") {
                 Text("Type Hazel : « si… alors ajoute le tag… » — appliqué automatiquement après chaque analyse, jamais avant.")
                     .font(.caption)
@@ -121,7 +152,12 @@ struct PreferencesView: View {
                 }
                 .padding(.top, 4)
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var storagePane: some View {
+        Form {
             Section("Statistiques") {
                 LabeledContent("Documents dans le coffre", value: "\(stats.documentCount)")
                 if environment.pendingAnalysisCount > 0 {
@@ -144,14 +180,6 @@ struct PreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 760, minHeight: 640)
-        .task {
-            budget = await environment.computeBudget()
-            documentCount = (try? await environment.activeDocumentCount()) ?? 0
-            remindersEnabled = await environment.remindersEnabled()
-            stats = await environment.computeStats()
-            await environment.loadAutomationRules()
-        }
     }
 
     private var conditionValuePlaceholder: String {

@@ -175,18 +175,27 @@ struct DocumentDetailView: View {
         }
     }
 
+    // Hiérarchie d'actions conforme aux HIG macOS : une seule action mise en avant (« Ouvrir »,
+    // la plus probable), les autres restent des boutons discrets, et la destructive se distingue
+    // par la couleur plutôt que par la prééminence — jamais l'action la plus visible de l'écran.
     private var actions: some View {
         HStack(spacing: 8) {
             Button("Ouvrir") { onOpen() }
+                .buttonStyle(.borderedProminent)
             Button("Aperçu") { quickLookURL = result.previewURL }
+                .buttonStyle(.bordered)
                 .disabled(result.previewURL == nil)
             Button("Révéler dans le Finder") { onReveal() }
+                .buttonStyle(.bordered)
             Button("Exporter…") { onExport() }
+                .buttonStyle(.bordered)
             Button(isCorrecting ? "Fermer la correction" : "Corriger…") { isCorrecting.toggle() }
+                .buttonStyle(.bordered)
             Spacer()
             Button("Retirer du coffre", role: .destructive) { onRemove() }
+                .buttonStyle(.bordered)
+                .tint(.red)
         }
-        .buttonStyle(.bordered)
     }
 }
 

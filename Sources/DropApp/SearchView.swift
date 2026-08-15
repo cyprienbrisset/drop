@@ -1,3 +1,4 @@
+import AppKit
 import QuickLook
 import SwiftUI
 
@@ -78,6 +79,10 @@ struct SearchView: View {
             await environment.search(queryText)
         }
         .onAppear { isSearchFieldFocused = true }
+        // Échap ferme la palette de recherche — le geste attendu sur une fenêtre de ce type
+        // (Spotlight, Alfred, Raycast), jamais un clic sur un bouton de fermeture qu'on ne voit
+        // même plus (§titleVisibility caché dans `AppDelegate.openSearchWindow`).
+        .onExitCommand { NSApp.keyWindow?.close() }
         // Tous ces raccourcis n'agissent que si le champ de recherche n'a pas le focus — sinon
         // Espace (le plus visible : impossible de taper une requête à plusieurs mots), Retour et
         // ⌘⌫ seraient volés à la saisie de texte normale dès qu'une ligne se trouve sélectionnée.
