@@ -43,13 +43,14 @@ struct DocumentDetailView: View {
             .padding(20)
         }
         .frame(minWidth: 640, minHeight: 700)
+        .tint(.dropBrand)
         .quickLookPreview($quickLookURL)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(result.displayName)
-                .font(.title3.bold())
+                .font(.system(.title2, design: .serif).weight(.semibold))
             if let summary = result.summary {
                 Text(summary)
                     .font(.callout)

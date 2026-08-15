@@ -12,11 +12,11 @@ struct TrashView: View {
     var body: some View {
         Group {
             if environment.trashedDocuments.isEmpty {
-                ContentUnavailableView(
-                    "Corbeille vide",
-                    systemImage: "trash",
-                    description: Text("Les documents retirés du coffre apparaissent ici pendant 30 jours.")
-                )
+                ContentUnavailableView {
+                    CrowMark(size: 72, showsPerch: false)
+                } description: {
+                    Text("Rien à rapporter ici. Les documents retirés du coffre restent visibles et restaurables pendant 30 jours avant de disparaître pour de bon.")
+                }
             } else {
                 List(environment.trashedDocuments) { document in
                     TrashedDocumentRow(document: document, retentionDays: Self.retentionDays) {
@@ -27,6 +27,7 @@ struct TrashView: View {
             }
         }
         .frame(minWidth: 420, minHeight: 360)
+        .tint(.dropBrand)
         .task { await environment.loadTrash() }
     }
 }

@@ -41,18 +41,24 @@ struct SearchView: View {
             Divider()
 
             if queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                ContentUnavailableView(
-                    "Tapez pour rechercher",
-                    systemImage: "magnifyingglass",
-                    description: Text("« la facture EDF de juillet », « contrats en 2024 »…")
-                )
+                ContentUnavailableView {
+                    CrowMark(size: 96, showsPerch: false)
+                } description: {
+                    VStack(spacing: 4) {
+                        Text("Le corbeau attend votre requête")
+                            .font(.system(.title3, design: .serif).italic())
+                            .foregroundStyle(.primary)
+                        Text("« la facture EDF de juillet », « contrats en 2024 »…")
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 .frame(maxHeight: .infinity)
             } else if environment.searchResults.isEmpty && !environment.isSearching {
-                ContentUnavailableView(
-                    "Aucun résultat pertinent",
-                    systemImage: "magnifyingglass",
-                    description: Text("Essayez une autre formulation.")
-                )
+                ContentUnavailableView {
+                    CrowMark(size: 72, showsPerch: false)
+                } description: {
+                    Text("Rien à rapporter pour cette formulation. Essayez d'autres mots.")
+                }
                 .frame(maxHeight: .infinity)
             } else {
                 List(environment.searchResults, selection: $selection) { result in
@@ -73,6 +79,7 @@ struct SearchView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 640)
+        .tint(.dropBrand)
         .task(id: queryText) {
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }

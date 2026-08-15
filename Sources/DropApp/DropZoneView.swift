@@ -27,25 +27,34 @@ struct DropZoneView: View {
         }
         .padding(12)
         .frame(width: 260)
+        .tint(.dropBrand)
     }
 
     private var dropZone: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary.opacity(0.35))
+                .foregroundStyle(isTargeted ? Color.dropBrand : Color.secondary.opacity(0.35))
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
+                        .fill(isTargeted ? Color.dropBrand.opacity(0.08) : Color.clear)
                 )
 
             VStack(spacing: 6) {
-                Image(systemName: statusSymbol)
-                    .font(.system(size: 26))
-                    .foregroundStyle(statusColor)
-                    .symbolEffect(.bounce, value: environment.dropZoneState)
-                    .symbolEffect(.pulse, options: .repeating, isActive: isShowingBacklog)
-                    .accessibilityHidden(true)
+                // Le corbeau, jamais un symbole SF générique, tant que rien de fonctionnel n'a
+                // besoin d'être signalé (ni survol, ni analyse en cours, ni erreur) — le seul
+                // moment où l'app n'a rien à dire d'urgent est celui où elle peut se montrer.
+                if environment.dropZoneState == .idle, !isShowingBacklog {
+                    CrowMark(size: 40, showsPerch: false)
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: statusSymbol)
+                        .font(.system(size: 26))
+                        .foregroundStyle(statusColor)
+                        .symbolEffect(.bounce, value: environment.dropZoneState)
+                        .symbolEffect(.pulse, options: .repeating, isActive: isShowingBacklog)
+                        .accessibilityHidden(true)
+                }
                 Text(statusText)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -124,7 +133,7 @@ struct DropZoneView: View {
             return "\(processed)/\(total) documents traités…"
         }
         switch environment.dropZoneState {
-        case .idle: return "Déposez un document ici"
+        case .idle: return "Le corbeau attend son prochain document"
         case .hovering: return "Relâchez pour déposer"
         case .ingesting(let name): return "Ingestion de « \(name) »…"
         case .success(let name): return "« \(name) » ajouté au coffre"

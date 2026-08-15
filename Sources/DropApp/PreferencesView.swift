@@ -43,6 +43,7 @@ struct PreferencesView: View {
             Tab("Stockage", systemImage: "internaldrive") { storagePane }
         }
         .frame(minWidth: 760, minHeight: 640)
+        .tint(.dropBrand)
         .task {
             budget = await environment.computeBudget()
             documentCount = (try? await environment.activeDocumentCount()) ?? 0

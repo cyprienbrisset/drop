@@ -41,13 +41,14 @@ struct OnboardingView: View {
             .padding(20)
         }
         .frame(minWidth: 480, minHeight: 420)
+        .tint(.dropBrand)
     }
 
     private var stepIndicator: some View {
         HStack(spacing: 6) {
             ForEach(0..<stepCount, id: \.self) { index in
                 Circle()
-                    .fill(index == step ? Color.accentColor : Color.secondary.opacity(0.3))
+                    .fill(index == step ? Color.dropBrand : Color.secondary.opacity(0.3))
                     .frame(width: 6, height: 6)
             }
         }
@@ -55,11 +56,19 @@ struct OnboardingView: View {
     }
 
     private var promiseStep: some View {
-        stepContainer(
-            symbol: "lock.shield",
-            title: "Vos documents, chez vous",
-            message: "Aucun compte. Aucun cloud. Aucun suivi. Drop retrouve vos fichiers en langage naturel, entièrement sur cet ordinateur."
-        )
+        VStack(spacing: 16) {
+            Spacer()
+            CrowMark(size: 120)
+            Text("Drop")
+                .font(.system(.largeTitle, design: .serif).italic().weight(.semibold))
+            Text("Un corbeau garde vos documents. Aucun compte. Aucun cloud. Aucun suivi — Drop les retrouve en langage naturel, entièrement sur cet ordinateur.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            Spacer()
+        }
+        .padding(32)
     }
 
     private var vaultLocationStep: some View {
@@ -105,7 +114,7 @@ struct OnboardingView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.title2.bold())
+                .font(.system(.title2, design: .serif).weight(.semibold))
             Text(message)
                 .font(.body)
                 .foregroundStyle(.secondary)
